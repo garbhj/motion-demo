@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="./style.css">
+  <title>Flail.io - Hand Controlled Game</title>
+</head>
+<body>
+  <!-- Full Screen Game Layer -->
+  <canvas id="game_canvas"></canvas>
+
+  <!-- Game UI Overlays (Scores, Leaderboard) -->
+  <div id="ui_layer">
+    <button id="startGameBtn">Start Camera & Play</button>
+  </div>
+
+  <!-- Picture-in-Picture Webcam / Debug -->
+  <div id="pip_container" class="hidden">
+    <div class="pip-header">
+      <span>Camera Tracking</span>
+      <button id="togglePipBtn">Hide</button>
+    </div>
+    <div class="pip-video-wrapper">
+      <video id="webcam" autoplay playsinline></video>
+      <!-- Debug canvas only draws the green/red skeleton, not the game -->
+      <canvas id="debug_canvas"></canvas> 
+    </div>
+  </div>
+  
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
