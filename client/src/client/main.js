@@ -1,10 +1,11 @@
 import { HandTracker } from "./HandTracker.js";
 import { processHandData, GESTURES } from "./HandHeuristics.js";
 import { NetworkManager } from "./NetworkManager.js";
+import { GameRenderer } from "./Renderer.js";
 
 // DOM Elements
 const gameCanvas = document.getElementById("game_canvas");
-const gameCtx = gameCanvas.getContext("2d");
+// const gameCtx = gameCanvas.getContext("2d");
 const debugCanvas = document.getElementById("debug_canvas");
 const debugCtx = debugCanvas.getContext("2d");
 const video = document.getElementById("webcam");
@@ -13,15 +14,26 @@ const pipContainer = document.getElementById("pip_container");
 // Modules
 const tracker = new HandTracker();
 const network = new NetworkManager();
+const renderer = new GameRenderer(gameCanvas);
 
-// --- STATE ---
-// 1. Current intended input from camera
+// State
 let localInput = { x: 0.5, y: 0.5, gesture: GESTURES.OPEN }; 
-// 2. The authoritative state from the server
-let worldState = { players: [], flails: [] }; 
+let trackingCenter = { x: 0.5, y: 0.5 }; // Screen center ratio (0-1)
+let worldState = null; 
 
 let lastVideoTime = -1;
 let isPlaying = false;
+
+// To recenter joystick, click button and or key "c"
+document.getElementById("recenterBtn").addEventListener("click", recenterJoystick);
+window.addEventListener("keydown", (e) => {
+  if (e.key.toLowerCase() === 'c') recenterJoystick();
+});
+
+function recenterJoystick() {
+  trackingCenter.x = localInput.x;
+  trackingCenter.y = localInput.y;
+}
 
 // Handle window resizing
 function resizeCanvas() {
@@ -65,27 +77,29 @@ async function startCamera() {
 function trackCameraLoop() {
   if (!isPlaying) return;
 
-  if (lastVideoTime !== video.currentTime) {
-    lastVideoTime = video.currentTime;
+  if (video.currentTime !== lastVideoTime) {  // Note: using explicit variable
+    lastVideoTime = video.currentTime; 
+
     const results = tracker.detect(video, performance.now());
 
     debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
     
     if (results?.landmarks?.length > 0) {
       const rawHand = results.landmarks[0];
-      
-      // Update our decoupled local input state
       const handState = processHandData(rawHand);
+      
+      // Update local logical state (Un-mirrored, used for game logic)
       localInput.x = handState.position.x;
       localInput.y = handState.position.y;
       localInput.gesture = handState.gesture;
 
-      // Draw skeleton to PiP
+      // 1. Draw raw AI skeleton
       tracker.drawDebugMesh(rawHand); 
-      drawHandState(debugCtx, handState, debugCanvas.width, debugCanvas.height);
+
+      // 2. Draw PiP Overlay (Tracking Center & Arrow)
+      drawPiPOverlay(debugCtx, handState, trackingCenter, debugCanvas.width, debugCanvas.height);
     }
-  }
-  
+  }  
   // Use requestVideoFrameCallback if available, otherwise fallback to rAF
   if ('requestVideoFrameCallback' in video) {
     video.requestVideoFrameCallback(trackCameraLoop);
@@ -96,74 +110,79 @@ function trackCameraLoop() {
 
 // --- LOOP 2: Network Syncing (Fixed 20 FPS) ---
 function networkLoop() {
-  // 1. Send our current input (mouse/hand intent) to server
-  network.sendPlayerInput(localInput);
+  // Calculate Joystick Vector (Difference between hand and tracking center)
+  let dx = localInput.x - trackingCenter.x;
+  let dy = localInput.y - trackingCenter.y;
 
-  // 2. Fetch the latest true state of the world from the server
-  // (In reality, this is handled asynchronously via WebSocket `onmessage`)
+  // Optional: Create a "deadzone" so slight hand jitters don't move you
+  const distance = Math.hypot(dx, dy);
+  const deadzone = 0.02; // Proportion of screen
+  const maxRadius = 0.25; // Max 
+
+  let moveVector = { moveX: 0, moveY: 0, gesture: localInput.gesture };
+
+  if (distance > deadzone) {
+    // Cap at maxRadius and normalize to -1.0 to 1.0
+    const clampedDist = Math.min(distance, maxRadius);
+    moveVector.moveX = (dx / distance) * (clampedDist / maxRadius);
+    moveVector.moveY = (dy / distance) * (clampedDist / maxRadius);
+  }
+
+  // Send Analog Vector to server
+  network.sendPlayerInput(moveVector);
+
+  // Fetch world state
   worldState = network.getLatestWorldState(); 
 }
 
 // --- LOOP 3: Game Rendering (60+ FPS) ---
 function renderLoop() {
-  gameCtx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
-
-  // Example: Draw the world based on SERVER state, NOT local input
-  // (Though you might draw a subtle reticle showing the localInput so the player knows where their hand is aiming)
-
-  // 1. Draw Player target reticle (Local Input)
-  const targetX = localInput.x * gameCanvas.width;
-  const targetY = localInput.y * gameCanvas.height;
-  gameCtx.strokeStyle = "rgba(255,255,255,0.5)";
-  gameCtx.beginPath();
-  gameCtx.arc(targetX, targetY, 15, 0, Math.PI * 2);
-  gameCtx.stroke();
-
-  // 2. Draw actual players from server state
-  worldState.players.forEach(p => {
-    gameCtx.fillStyle = p.color;
-    gameCtx.beginPath();
-    gameCtx.arc(p.x, p.y, 25, 0, Math.PI * 2);
-    gameCtx.fill();
-  });
-
-  // 3. Draw flails from server state
-  worldState.flails.forEach(f => {
-    gameCtx.fillStyle = f.isDetached ? "red" : "gray";
-    gameCtx.beginPath();
-    gameCtx.arc(f.x, f.y, 12, 0, Math.PI * 2);
-    gameCtx.fill();
-    
-    // Draw chain if attached
-    if (!f.isDetached) {
-      const owner = worldState.players.find(p => p.id === f.ownerId);
-      if (owner) {
-        gameCtx.strokeStyle = "gray";
-        gameCtx.beginPath();
-        gameCtx.moveTo(owner.x, owner.y);
-        gameCtx.lineTo(f.x, f.y);
-        gameCtx.stroke();
-      }
-    }
-  });
-
+  if (worldState) {
+    // Offload all rendering to the new Renderer module
+    renderer.render(worldState, network.myId, localInput, trackingCenter);
+  }
   requestAnimationFrame(renderLoop);
 }
 
 boot();
 
-function drawHandState(ctx, handState, width, height) {
-  // 1. UNDO THE MATH MIRROR FOR THE UI
-  // handState.position.x is already (1 - rawX). 
-  // Doing 1 - (1 - rawX) gives us rawX back, aligning perfectly with the CSS-mirrored skeleton!
-  const rawX = 1 - handState.position.x; 
+// --- PiP Drawing Function ---
+function drawPiPOverlay(ctx, handState, centerPos, width, height) {
+  // 1. Calculate Visual Coordinates 
+  // We use (1 - X) because the canvas CSS is mirrored (scaleX(-1)). 
+  // If we don't invert X here, the overlay will move opposite to the video!
+  const visualHandX = (1 - handState.position.x) * width;
+  const visualHandY = handState.position.y * height;
   
-  const pixelX = rawX * width;
-  const pixelY = handState.position.y * height;
+  const visualCenterX = (1 - centerPos.x) * width;
+  const visualCenterY = centerPos.y * height;
+
+  // 2. Draw Tracking Center (Anchor Point)
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
+  ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
+  ctx.lineWidth = 2;
   
+  ctx.beginPath();
+  ctx.arc(visualCenterX, visualCenterY, 30, 0, Math.PI * 2); // Outer deadzone ring
+  ctx.fill();
+  ctx.stroke();
+  
+  ctx.beginPath();
+  ctx.arc(visualCenterX, visualCenterY, 4, 0, Math.PI * 2);  // Center dot
+  ctx.fillStyle = "white";
+  ctx.fill();
+
+  // 3. Draw Connecting Line (The "Joystick" shaft)
+  ctx.beginPath();
+  ctx.moveTo(visualCenterX, visualCenterY);
+  ctx.lineTo(visualHandX, visualHandY);
+  ctx.strokeStyle = "rgba(255, 255, 0, 0.8)"; // Yellow line
+  ctx.lineWidth = 4;
+  ctx.stroke();
+
+  // 4. Determine Hand Color based on Gesture
   let color = "white";
   let label = "UNKNOWN";
-
   switch (handState.gesture) {
     case GESTURES.OPEN: color = "#00FF00"; label = "OPEN"; break;
     case GESTURES.CLOSED: color = "#FF0000"; label = "CLOSED"; break;
@@ -171,29 +190,31 @@ function drawHandState(ctx, handState, width, height) {
     case GESTURES.POINT: color = "#00FFFF"; label = "POINT"; break;
   }
 
-  // 2. Draw the Dot (Normally)
-  // The CSS scaleX(-1) will flip this dot to be visually over the correct hand.
+  // 5. Draw Hand Dot
   ctx.beginPath();
-  ctx.arc(pixelX, pixelY, 12, 0, 2 * Math.PI);
+  ctx.arc(visualHandX, visualHandY, 12, 0, 2 * Math.PI);
   ctx.fillStyle = color;
   ctx.fill();
   ctx.strokeStyle = "white";
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  // 3. Draw the Text (Fixing the backwards text issue)
-  ctx.save();          // Save current state
-  ctx.scale(-1, 1);    // Flip the internal canvas drawing context horizontally
+  // 6. Draw Un-mirrored Text
+  // We must temporarily flip the canvas context so the text doesn't render backwards
+  ctx.save();
+  ctx.scale(-1, 1); 
 
-  ctx.font = "bold 16px Arial";
+  ctx.font = "bold 18px Arial";
   ctx.fillStyle = color;
   ctx.shadowColor = "black";
   ctx.shadowBlur = 4;
+  ctx.lineWidth = 3;
   
-  // CAUTION: Because we flipped the canvas via scale(-1, 1), 
-  // the X-axis is now inverted. We MUST use a negative X (-pixelX) 
-  // to draw at the correct location!
-  ctx.fillText(label, -pixelX + 15, pixelY + 5); 
+  // Note: Because we used scale(-1, 1), we MUST use negative X to draw in the correct place!
+  const textString = `${label} (${Math.round((handState.position.x - centerPos.x)*100)}, ${Math.round((handState.position.y - centerPos.y)*100)})`;
   
-  ctx.restore();       // Restore state so we don't accidentally flip everything else
+  ctx.strokeText(textString, -visualHandX + 20, visualHandY + 5);
+  ctx.fillText(textString, -visualHandX + 20, visualHandY + 5);
+  
+  ctx.restore();
 }

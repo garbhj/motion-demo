@@ -36,7 +36,7 @@ export function processHandData(landmarks) {
   const count = landmarks.length;
   
   const position = {
-    x: 1 - (sumX / count),
+    x: 1 - (sumX / count),  // MIRROR INPUT
     y: sumY / count,
     z: sumZ / count
   };
@@ -71,7 +71,7 @@ export function processHandData(landmarks) {
   // 4. Evaluate Heuristics (Order of Priority matters!)
   let detectedGesture = GESTURES.OPEN; // Default state
 
-  // A. Check for PINCH <REMOVED>
+  // A. Check for PINCH
   // Since landmarks are normalized (0 to 1), a distance of 0.09 is quite close.
   const pinchThreshold = 0.09; 
   const distThumbIndex = getDistance(thumbTip, indexTip);
@@ -91,7 +91,7 @@ export function processHandData(landmarks) {
     const straightness = dotProduct(vec1, vec2);
     
     // If dot product is close to 1, the finger is pointing straight out from the palm line
-    if (straightness > 0.85) { 
+    if (straightness > 0.8) { 
       detectedGesture = GESTURES.POINT;
     }
   }
