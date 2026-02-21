@@ -1,133 +1,152 @@
 import { HandTracker } from "./HandTracker.js";
-import { processHandData, GESTURES } from "./HandHeuristics.js"; // <-- Import Enum
+import { processHandData, GESTURES } from "./HandHeuristics.js";
 import { NetworkManager } from "./NetworkManager.js";
 
 // DOM Elements
+const gameCanvas = document.getElementById("game_canvas");
+const gameCtx = gameCanvas.getContext("2d");
+const debugCanvas = document.getElementById("debug_canvas");
+const debugCtx = debugCanvas.getContext("2d");
 const video = document.getElementById("webcam");
-const canvasElement = document.getElementById("output_canvas");
-const canvasCtx = canvasElement.getContext("2d");
-const webcamButton = document.getElementById("webcamButton");
-const gameUi = document.getElementById("game-ui");
+const pipContainer = document.getElementById("pip_container");
 
-// Game Modules
+// Modules
 const tracker = new HandTracker();
 const network = new NetworkManager();
 
-// State
-let isPlaying = false;
+// --- STATE ---
+// 1. Current intended input from camera
+let localInput = { x: 0.5, y: 0.5, gesture: GESTURES.OPEN }; 
+// 2. The authoritative state from the server
+let worldState = { players: [], flails: [] }; 
+
 let lastVideoTime = -1;
+let isPlaying = false;
+
+// Handle window resizing
+function resizeCanvas() {
+  gameCanvas.width = window.innerWidth;
+  gameCanvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
 
 async function boot() {
   await tracker.initialize();
-  tracker.setCanvas(canvasCtx);
-  document.querySelector("p").style.display = "none";
-  gameUi.classList.remove("invisible");
+  tracker.setCanvas(debugCtx); // Tracker only draws to the PiP debug canvas now!
+  
+  document.getElementById("startGameBtn").addEventListener("click", startCamera);
+  document.getElementById("togglePipBtn").addEventListener("click", () => {
+    pipContainer.classList.toggle("minimized");
+  });
 }
 
-webcamButton.addEventListener("click", async () => {
-  isPlaying = !isPlaying;
+async function startCamera() {
+  document.getElementById("ui_layer").style.display = "none";
+  pipContainer.classList.remove("hidden");
+  
+  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  video.srcObject = stream;
+  
+  // Wait for video to start playing before kicking off loops
+  video.addEventListener("loadeddata", () => {
+    debugCanvas.width = video.videoWidth;
+    debugCanvas.height = video.videoHeight;
+    isPlaying = true;
 
-  if (isPlaying) {
-    webcamButton.innerText = "STOP GAME";
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-    video.srcObject = stream;
-    video.addEventListener("loadeddata", gameLoop);
-  } else {
-    webcamButton.innerText = "START GAME";
-    video.srcObject.getTracks().forEach(track => track.stop());
-    video.srcObject = null;
-    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-  }
-});
+    // Start independent loops
+    requestAnimationFrame(renderLoop);   // Render as fast as possible (60fps)
+    setInterval(networkLoop, 1000 / 20); // Network 20 times a second
+    trackCameraLoop();                   // Input tied to camera frame rate
+  });
+}
 
-function gameLoop() {
+// --- LOOP 1: Input Processing (Runs on camera frames) ---
+function trackCameraLoop() {
   if (!isPlaying) return;
 
-  if (canvasElement.width !== video.videoWidth) {
-    canvasElement.width = video.videoWidth;
-    canvasElement.height = video.videoHeight;
-  }
-
-  let now = performance.now();
-  
   if (lastVideoTime !== video.currentTime) {
     lastVideoTime = video.currentTime;
-    const results = tracker.detect(video, now);
+    const results = tracker.detect(video, performance.now());
 
-    canvasCtx.save();
-    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+    debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
     
-    if (results && results.landmarks && results.landmarks.length > 0) {
+    if (results?.landmarks?.length > 0) {
       const rawHand = results.landmarks[0];
+      
+      // Update our decoupled local input state
+      const handState = processHandData(rawHand);
+      localInput.x = handState.position.x;
+      localInput.y = handState.position.y;
+      localInput.gesture = handState.gesture;
 
-      // Flip canvas temporarily draw the raw AI skeleton
-      canvasCtx.save();
-      canvasCtx.scale(-1, 1); // Flip horizontally
-      canvasCtx.translate(-canvasElement.width, 0); // Move canvas back into view
-      tracker.drawDebugMesh(rawHand);
-      canvasCtx.restore(); // Revert canvas back to normal
-
-      // Process Game Logic
-      const gameState = processHandData(rawHand);
-
-      // Draw Visuals based on the new gesture Enum
-      drawGameDot(gameState);
-
-      // Send state to server
-      network.sendPlayerState(gameState);
+      // Draw skeleton to PiP
+      tracker.drawDebugMesh(rawHand); 
     }
-    canvasCtx.restore();
   }
-
-  window.requestAnimationFrame(gameLoop);
+  
+  // Use requestVideoFrameCallback if available, otherwise fallback to rAF
+  if ('requestVideoFrameCallback' in video) {
+    video.requestVideoFrameCallback(trackCameraLoop);
+  } else {
+    requestAnimationFrame(trackCameraLoop);
+  }
 }
 
-// --- Updated Game Graphics logic ---
-function drawGameDot(gameState) {
-  const pixelX = gameState.position.x * canvasElement.width;
-  const pixelY = gameState.position.y * canvasElement.height;
-  
-  let color = "white";
-  let label = "UNKNOWN";
+// --- LOOP 2: Network Syncing (Fixed 20 FPS) ---
+function networkLoop() {
+  // 1. Send our current input (mouse/hand intent) to server
+  network.sendPlayerInput(localInput);
 
-  // Map the gesture integer to colors and labels
-  switch (gameState.gesture) {
-    case GESTURES.OPEN:
-      color = "rgba(0, 255, 0, 0.8)"; // Lime Green
-      label = "OPEN";
-      break;
-    case GESTURES.CLOSED:
-      color = "rgba(255, 0, 0, 0.8)"; // Red
-      label = "CLOSED";
-      break;
-    case GESTURES.PINCH:
-      color = "rgba(255, 255, 0, 0.8)"; // Yellow
-      label = "PINCH";
-      break;
-    case GESTURES.POINT:
-      color = "rgba(0, 255, 255, 0.8)"; // Cyan
-      label = "POINT";
-      break;
-  }
+  // 2. Fetch the latest true state of the world from the server
+  // (In reality, this is handled asynchronously via WebSocket `onmessage`)
+  worldState = network.getLatestWorldState(); 
+}
 
-  // Draw the tracking circle
-  canvasCtx.beginPath();
-  canvasCtx.arc(pixelX, pixelY, 20, 0, 2 * Math.PI);
-  canvasCtx.fillStyle = color;
-  canvasCtx.fill();
-  canvasCtx.strokeStyle = "white";
-  canvasCtx.lineWidth = 3;
-  canvasCtx.stroke();
+// --- LOOP 3: Game Rendering (60+ FPS) ---
+function renderLoop() {
+  gameCtx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
 
-  // Draw the text label floating above the dot
-  canvasCtx.font = "24px Arial";
-  canvasCtx.fillStyle = color;
-  canvasCtx.strokeStyle = "black";
-  canvasCtx.lineWidth = 4;
-  
-  // Center text above the dot (y - 30px)
-  canvasCtx.strokeText(label, pixelX - 30, pixelY - 30);
-  canvasCtx.fillText(label, pixelX - 30, pixelY - 30);
+  // Example: Draw the world based on SERVER state, NOT local input
+  // (Though you might draw a subtle reticle showing the localInput so the player knows where their hand is aiming)
+
+  // 1. Draw Player target reticle (Local Input)
+  const targetX = localInput.x * gameCanvas.width;
+  const targetY = localInput.y * gameCanvas.height;
+  gameCtx.strokeStyle = "rgba(255,255,255,0.5)";
+  gameCtx.beginPath();
+  gameCtx.arc(targetX, targetY, 15, 0, Math.PI * 2);
+  gameCtx.stroke();
+
+  // 2. Draw actual players from server state
+  worldState.players.forEach(p => {
+    gameCtx.fillStyle = p.color;
+    gameCtx.beginPath();
+    gameCtx.arc(p.x, p.y, 25, 0, Math.PI * 2);
+    gameCtx.fill();
+  });
+
+  // 3. Draw flails from server state
+  worldState.flails.forEach(f => {
+    gameCtx.fillStyle = f.isDetached ? "red" : "gray";
+    gameCtx.beginPath();
+    gameCtx.arc(f.x, f.y, 12, 0, Math.PI * 2);
+    gameCtx.fill();
+    
+    // Draw chain if attached
+    if (!f.isDetached) {
+      const owner = worldState.players.find(p => p.id === f.ownerId);
+      if (owner) {
+        gameCtx.strokeStyle = "gray";
+        gameCtx.beginPath();
+        gameCtx.moveTo(owner.x, owner.y);
+        gameCtx.lineTo(f.x, f.y);
+        gameCtx.stroke();
+      }
+    }
+  });
+
+  requestAnimationFrame(renderLoop);
 }
 
 boot();
