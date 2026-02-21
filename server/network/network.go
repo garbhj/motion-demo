@@ -1,21 +1,20 @@
 package network
 
 import (
-	"fmt"
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/gorilla/websocket"
+	"motion/config"
+
+	"motion/protocol"
 )
 
 var upgrader = websocket.Upgrader{
-	// For dev, allow all origins. Lock this down in prod.
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
-	// Upgrade HTTP -> WebSocket
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println("upgrade:", err)
@@ -23,52 +22,69 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// Basic timeouts + pong handling (keeps connections healthy)
-	conn.SetReadLimit(1 << 20) // 1MB
-	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	conn.SetPongHandler(func(string) error {
-		_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-		return nil
-	})
-
-	// Ping loop (optional but recommended)
-	done := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(25 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-					close(done)
-					return
-				}
-			case <-done:
-				return
-			}
-		}
-	}()
-
-	// Echo loop
+	// Msg loop per connection
 	for {
-		msgType, msg, err := conn.ReadMessage()
+		_, msg, err := conn.ReadMessage()
 		if err != nil {
 			log.Println("read:", err)
-			break
+			return
 		}
-		log.Printf("recv: %s", msg)
 
-		_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-		if err := conn.WriteMessage(msgType, []byte(fmt.Sprintf("echo: %s", msg))); err != nil {
-			log.Println("write:", err)
-			break
+		// 1) Decode envelope (this creates env)
+		env, err := protocol.DecodeEnvelope(msg)
+		if err != nil {
+			log.Printf("bad envelope: %v", err)
+			continue
+		}
+
+		// 2) Switch on message type
+		switch env.T {
+
+		case protocol.MsgHello:
+			hello, err := protocol.DecodePayload[protocol.Hello](env)
+			if err != nil {
+				log.Printf("bad hello payload: %v", err)
+				continue
+			}
+			log.Printf("hello: v=%d name=%q", hello.V, hello.Name)
+
+			// respond with welcome
+			b, err := protocol.Encode(protocol.MsgWelcome, protocol.Welcome{
+				PlayerID: "p1",
+				TickHz:   20,
+			})
+			if err != nil {
+				log.Printf("encode welcome: %v", err)
+				continue
+			}
+			if err := conn.WriteMessage(websocket.TextMessage, b); err != nil {
+				log.Printf("write welcome: %v", err)
+				return
+			}
+
+		case protocol.MsgInput:
+			inp, err := protocol.DecodePayload[protocol.Input](env)
+			if err != nil {
+				log.Printf("bad input payload: %v", err)
+				continue
+			}
+			log.Printf("input: ax=%.2f ay=%.2f boost=%v", inp.Ax, inp.Ay, inp.Boost)
+
+		default:
+			log.Printf("unknown message type: %q", env.T)
 		}
 	}
+
 }
 
-func main() {
+func Start() {
 	http.HandleFunc("/ws", wsHandler)
 	log.Println("listening on :8080 (ws endpoint: /ws)")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+
+	config.InitConfig()
+	addr, err := config.GetEnvVariable("NETWORK_ADDR")
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Fatal(http.ListenAndServe(addr, nil))
 }

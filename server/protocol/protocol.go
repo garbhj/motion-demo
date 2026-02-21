@@ -4,7 +4,12 @@ import (
 	"encoding/json"
 )
 
-const MsgHello = "Hello!"
+const (
+	MsgHello   = "hello"
+	MsgInput   = "input"
+	MsgWelcome = "Welcome"
+	MsgState   = "state"
+)
 
 type Envelope struct {
 	T string          `json:"t"`

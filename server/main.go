@@ -6,7 +6,8 @@ import (
 )
 
 func main() {
-	fmt.Println("Welcome to Motion!")
-	network.InitServer()
+	fmt.Println("Please compile plz :) ")
+	fmt.Println("IM LOSING IT!!!")
+	network.Start()
 
 }

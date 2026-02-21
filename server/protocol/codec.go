@@ -39,3 +39,15 @@ func DecodeEnvelope(b []byte) (Envelope, error) {
 	}
 	return e, nil
 }
+
+func DecodePayload[T any](env Envelope) (T, error) {
+	// ahhh generics I see.
+	// Creates zero value of wahtever type T is. say T is input then out is  Input{}
+	var out T
+	if len(env.P) == 0 {
+		return out, fmt.Errorf("empty payload for type %q", env.T)
+	}
+	err := json.Unmarshal(env.P, &out)
+	return out, err
+
+}
