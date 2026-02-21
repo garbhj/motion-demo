@@ -1,5 +1,31 @@
 import { GESTURES } from "./HandHeuristics.js";
 
+// Helpers
+// Generates a distinct color for any given integer ID using the Golden Ratio
+function getColorForId(id) {
+  const hue = (id * 137.508) % 360;
+  return `hsl(${hue}, 70%, 60%)`;
+}
+
+// The shared math function (Server should use this exact logic for collisions)
+function getFlailRadius(score) {
+  const baseRadius = 12;
+  const growthFactor = 0.05; // How much it grows per point
+  return baseRadius + (score * growthFactor);
+}
+
+// Brighten
+function ColorLuminance(hsl, factor) {
+  const parts = hsl.match(/[\d.]+/g);
+  if (!parts || parts.length < 3) return hsl;
+
+  const [h, s, l] = parts;
+  const newL = Math.max(0, Math.min(100, l * (1 + factor)));
+
+  return `hsl(${h}, ${s}%, ${newL.toFixed(2)}%)`;
+}
+
+
 export class GameRenderer {
   constructor(canvas) {
     this.canvas = canvas;
@@ -8,7 +34,7 @@ export class GameRenderer {
 
   // Called every frame by main.js
   render(worldState, localPlayerId, localInput, trackingCenter) {
-    console.log("LocalInput" + localInput.x + localInput.y + "\nLocalPlayerId:" + localPlayerId);
+    // console.log("LocalInput" + localInput.x + localInput.y + "\nLocalPlayerId:" + localPlayerId);
 
     const ctx = this.ctx;
     const width = this.canvas.width;
@@ -50,13 +76,24 @@ export class GameRenderer {
 
     // 5. Draw Flails (Behind players)
     worldState.flails.forEach(f => {
-      ctx.fillStyle = f.isDetached ? "red" : "#aaa";
+      // Find the owner to get their score and ID
+      const owner = worldState.players.find(p => p.id === f.ownerId);
+      const score = owner ? owner.score : 0;
+      const radius = getFlailRadius(score);
+      const playerColor = owner ? getColorForId(owner.id) : "#aaa";
+      
+      // If detached, color it red to indicate danger. Otherwise, match player color.
+      ctx.fillStyle = f.isDetached ? ColorLuminance(playerColor, 0.3) : playerColor;
+      
       ctx.beginPath();
-      ctx.arc(f.x, f.y, 12, 0, Math.PI * 2);
+      ctx.arc(f.x, f.y, radius, 0, Math.PI * 2);
       ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(0,0,0,0.5)";
+      ctx.stroke();
 
       // Draw chain
-      if (!f.isDetached) {
+      if (!f.isDetached && owner) {
         const owner = worldState.players.find(p => p.id === f.ownerId);
         if (owner) {
           ctx.strokeStyle = "#666";
@@ -71,17 +108,23 @@ export class GameRenderer {
 
     // 6. Draw Players
     worldState.players.forEach(p => {
-      ctx.fillStyle = p.color;
+      const playerColor = getColorForId(p.id);
+
+      ctx.fillStyle = playerColor;
       ctx.beginPath();
       ctx.arc(p.x, p.y, 25, 0, Math.PI * 2);
       ctx.fill();
       
-      // Highlight local player
-      if (p.id === localPlayerId) {
-        ctx.strokeStyle = "white";
-        ctx.lineWidth = 3;
-        ctx.stroke();
-      }
+      // Outline, highlight this player
+      ctx.strokeStyle = p.id === localPlayerId ? "white" : "rgba(0,0,0,0.5)";
+      ctx.lineWidth = p.id === localPlayerId ? 4 : 2;
+      ctx.stroke();
+
+      // Names
+      ctx.fillStyle = "white";
+      ctx.font = "bold 14px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(p.name || `Player ${p.id} \n Score ${p.score}`, p.x, p.y - 35);
     });
 
     // --- RESTORE CAMERA ---

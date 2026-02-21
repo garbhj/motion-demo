@@ -5,11 +5,16 @@ import { GameRenderer } from "./Renderer.js";
 
 // DOM Elements
 const gameCanvas = document.getElementById("game_canvas");
-// const gameCtx = gameCanvas.getContext("2d");
 const debugCanvas = document.getElementById("debug_canvas");
 const debugCtx = debugCanvas.getContext("2d");
 const video = document.getElementById("webcam");
 const pipContainer = document.getElementById("pip_container");
+
+const mainMenu = document.getElementById("menu_screen");
+const inGameUi = document.getElementById("game_ui_layer");
+const enableCameraBtn = document.getElementById("enableCameraBtn");
+const playBtn = document.getElementById("startGameBtn");
+const playerNameInput = document.getElementById("playerName");
 
 // Modules
 const tracker = new HandTracker();
@@ -22,7 +27,13 @@ let trackingCenter = { x: 0.5, y: 0.5 }; // Screen center ratio (0-1)
 let worldState = null; 
 
 let lastVideoTime = -1;
+let isCameraActive = false;
 let isPlaying = false;
+let networkInterval = null;
+let renderFrameId = null;  // 
+
+// Controls
+document.getElementById("exitBtn").addEventListener("click", exitGame);
 
 // To recenter joystick, click button and or key "c"
 document.getElementById("recenterBtn").addEventListener("click", recenterJoystick);
@@ -44,18 +55,34 @@ window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
 async function boot() {
+  enableCameraBtn.innerText = "Loading AI...";
+  enableCameraBtn.disabled = true;
   await tracker.initialize();
-  tracker.setCanvas(debugCtx); // Tracker only draws to the PiP debug canvas now!
+  tracker.setCanvas(debugCtx);
   
-  document.getElementById("startGameBtn").addEventListener("click", startCamera);
+  enableCameraBtn.innerText = "Start Camera";
+  enableCameraBtn.disabled = false;
+
+  enableCameraBtn.addEventListener("click", toggleCamera);
+  playBtn.addEventListener("click", startGame);
+
   document.getElementById("togglePipBtn").addEventListener("click", () => {
     pipContainer.classList.toggle("minimized");
   });
 }
 
+// STATE 1: CAMERA START/STOP
+async function toggleCamera() {
+  if (isCameraActive) {
+    stopCamera();
+  } else {
+    await startCamera();
+  }
+}
+
 async function startCamera() {
-  document.getElementById("ui_layer").style.display = "none";
-  pipContainer.classList.remove("hidden");
+  enableCameraBtn.disabled = true;
+  enableCameraBtn.innerText = "Camera Starting...";
   
   const stream = await navigator.mediaDevices.getUserMedia({ video: true });
   video.srcObject = stream;
@@ -64,18 +91,71 @@ async function startCamera() {
   video.addEventListener("loadeddata", () => {
     debugCanvas.width = video.videoWidth;
     debugCanvas.height = video.videoHeight;
-    isPlaying = true;
+    isCameraActive = true;
 
-    // Start independent loops
-    requestAnimationFrame(renderLoop);   // Render as fast as possible (60fps)
-    setInterval(networkLoop, 1000 / 20); // Network 20 times a second
-    trackCameraLoop();                   // Input tied to camera frame rate
+    pipContainer.classList.remove("hidden");
+    
+    enableCameraBtn.innerText = "Disable Camera";
+    enableCameraBtn.disabled = false;
+    playBtn.disabled = false;
+    trackCameraLoop(); // Input tied to camera frame rate
   });
+}
+
+async function stopCamera()  {
+  isCameraActive = false;
+  if (video.srcObject) {
+    video.srcObject.getTracks().forEach(track => track.stop());
+    video.srcObject = null;
+  }
+
+  enableCameraBtn.disabled = false;
+  enableCameraBtn.innerText = "Start Camera";
+
+  pipContainer.classList.add("hidden");
+  debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);  // Wipes the PiP
+
+  playBtn.disabled = true;
+}
+
+// STATE 2: GAME START/STOP
+function startGame() {
+  const name = playerNameInput.value.trim() || "Anonymous";
+  
+  console.log("JOINING GAME!!");
+  // Tell network we're joining
+  network.joinGame(name);
+
+  mainMenu.classList.add("hidden");
+  inGameUi.classList.remove("hidden");
+  isPlaying = true;
+
+  trackingCenter = { x: 0.5, y: 0.5 };  // Reset the tracking center to middle upon starting
+
+  networkInterval = setInterval(networkLoop, 1000 / 20); // 20 FPS
+  renderFrameId = requestAnimationFrame(renderLoop);
+}
+
+function exitGame() {
+  isPlaying = false;
+  
+  // Stop Loops
+  clearInterval(networkInterval);
+  if (renderFrameId) cancelAnimationFrame(renderFrameId);
+  // stopCamera(); // Stop camera
+
+  // Reset UI
+  mainMenu.classList.remove("hidden");
+  inGameUi.classList.add("hidden");
+  
+  // Clear *game* canvas
+  const ctx = gameCanvas.getContext("2d");
+  ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
 }
 
 // --- LOOP 1: Input Processing (Runs on camera frames) ---
 function trackCameraLoop() {
-  if (!isPlaying) return;
+  if (!isCameraActive) return;
 
   if (video.currentTime !== lastVideoTime) {  // Note: using explicit variable
     lastVideoTime = video.currentTime; 
@@ -130,13 +210,13 @@ function networkLoop() {
 
   // Send Analog Vector to server
   network.sendPlayerInput(moveVector);
-
-  // Fetch world state
   worldState = network.getLatestWorldState(); 
 }
 
 // --- LOOP 3: Game Rendering (60+ FPS) ---
 function renderLoop() {
+  if (!isPlaying) return; // Stop render loop if not playing
+
   if (worldState) {
     // Offload all rendering to the new Renderer module
     renderer.render(worldState, network.myId, localInput, trackingCenter);

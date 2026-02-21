@@ -3,16 +3,41 @@
 <head>
   <meta charset="UTF-8">
   <link rel="stylesheet" href="./style.css">
-  <title>Flail.io - Hand Controlled Game</title>
+  <title>Motion.io - Control With Your Hand</title>
 </head>
 <body>
   <!-- Full Screen Game Layer -->
   <canvas id="game_canvas"></canvas>
 
-  <!-- Game UI Overlays (Scores, Leaderboard) -->
-  <div id="ui_layer">
-    <button id="startGameBtn">Start Camera & Play</button>
-    <button id="recenterBtn">Recenter Joystick</button>
+  <!-- Main Menu Overlay -->
+  <div id="menu_screen" class="overlay">
+    <div class="menu-box">
+      <h1>Motion.io</h1>
+      
+      <div class="input-group">
+        <label for="playerName">Choose your name:</label>
+        <input type="text" id="playerName" placeholder="Enter name..." maxlength="12">
+      </div>
+
+      <div class="tips">
+        <h3>How to Play:</h3>
+        <ul>
+          <li><b>Move:</b> Move your open hand away from the center.</li>
+          <li><b>Retract:</b> Pinch or close your hand to pull the flail close.</li>
+          <li><b>Attack:</b> Point to detach and throw your flail!</li>
+          <li><b>Recenter:</b> Press <b>'C'</b> to recenter the reference point.</li>
+        </ul>
+      </div>
+
+      <button id="enableCameraBtn" class="btn primary-btn">Start Camera</button>
+      <button id="startGameBtn" class="btn primary-btn" disabled>PLAY GAME</button>
+    </div>
+  </div>
+
+  <!-- In-Game UI Layer -->
+  <div id="game_ui_layer" class="hidden">
+    <button id="exitBtn" class="btn danger-btn">Exit Game</button>
+    <button id="recenterBtn" class="btn secondary-btn">Recenter Joystick (C)</button>
   </div>
 
   <!-- Picture-in-Picture Webcam / Debug -->
@@ -23,7 +48,6 @@
     </div>
     <div class="pip-video-wrapper">
       <video id="webcam" autoplay playsinline></video>
-      <!-- Debug canvas only draws the green/red skeleton, not the game -->
       <canvas id="debug_canvas"></canvas> 
     </div>
   </div>
