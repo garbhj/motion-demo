@@ -2,8 +2,8 @@
 export const GESTURES = {
   OPEN: 0,
   CLOSED: 1,
-  PINCH: 2,
-  POINT: 3
+  POINT: 2,
+  PINCH: 3
 };
 
 // --- Math Helpers ---
@@ -71,7 +71,7 @@ export function processHandData(landmarks) {
   // 4. Evaluate Heuristics (Order of Priority matters!)
   let detectedGesture = GESTURES.OPEN; // Default state
 
-  // A. Check for PINCH
+  // A. Check for PINCH <REMOVED>
   // Since landmarks are normalized (0 to 1), a distance of 0.09 is quite close.
   const pinchThreshold = 0.09; 
   const distThumbIndex = getDistance(thumbTip, indexTip);
@@ -83,7 +83,7 @@ export function processHandData(landmarks) {
   
   // B. Check for POINT
   // Conditions: Index is NOT folded, Middle/Ring/Pinky ARE folded.
-  else if (!isIndexFolded && foldedCount >= 2) {
+  if (!isIndexFolded && foldedCount >= 2) {
     // Advanced Linearity Check: Vector from Wrist(0) to Knuckle(5) vs Knuckle(5) to Tip(8)
     const vec1 = normalize(getVector(wrist, indexMCP));
     const vec2 = normalize(getVector(indexMCP, indexTip));

@@ -82,6 +82,7 @@ function trackCameraLoop() {
 
       // Draw skeleton to PiP
       tracker.drawDebugMesh(rawHand); 
+      drawHandState(debugCtx, handState, debugCanvas.width, debugCanvas.height);
     }
   }
   
@@ -150,3 +151,49 @@ function renderLoop() {
 }
 
 boot();
+
+function drawHandState(ctx, handState, width, height) {
+  // 1. UNDO THE MATH MIRROR FOR THE UI
+  // handState.position.x is already (1 - rawX). 
+  // Doing 1 - (1 - rawX) gives us rawX back, aligning perfectly with the CSS-mirrored skeleton!
+  const rawX = 1 - handState.position.x; 
+  
+  const pixelX = rawX * width;
+  const pixelY = handState.position.y * height;
+  
+  let color = "white";
+  let label = "UNKNOWN";
+
+  switch (handState.gesture) {
+    case GESTURES.OPEN: color = "#00FF00"; label = "OPEN"; break;
+    case GESTURES.CLOSED: color = "#FF0000"; label = "CLOSED"; break;
+    case GESTURES.PINCH: color = "#FFFF00"; label = "PINCH"; break;
+    case GESTURES.POINT: color = "#00FFFF"; label = "POINT"; break;
+  }
+
+  // 2. Draw the Dot (Normally)
+  // The CSS scaleX(-1) will flip this dot to be visually over the correct hand.
+  ctx.beginPath();
+  ctx.arc(pixelX, pixelY, 12, 0, 2 * Math.PI);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.strokeStyle = "white";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // 3. Draw the Text (Fixing the backwards text issue)
+  ctx.save();          // Save current state
+  ctx.scale(-1, 1);    // Flip the internal canvas drawing context horizontally
+
+  ctx.font = "bold 16px Arial";
+  ctx.fillStyle = color;
+  ctx.shadowColor = "black";
+  ctx.shadowBlur = 4;
+  
+  // CAUTION: Because we flipped the canvas via scale(-1, 1), 
+  // the X-axis is now inverted. We MUST use a negative X (-pixelX) 
+  // to draw at the correct location!
+  ctx.fillText(label, -pixelX + 15, pixelY + 5); 
+  
+  ctx.restore();       // Restore state so we don't accidentally flip everything else
+}

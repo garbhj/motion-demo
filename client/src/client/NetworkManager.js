@@ -29,10 +29,10 @@ export class NetworkManager {
       if (this.latestInput.gesture === 0) { // OPEN: Swing standard
         this.mockFlailPos.x += (this.mockPlayerPos.x - this.mockFlailPos.x) * 0.2;
         this.mockFlailPos.y += ((this.mockPlayerPos.y - 60) - this.mockFlailPos.y) * 0.2;
-      } else if (this.latestInput.gesture === 1) { // CLOSED: Retract tight
+      } else if (this.latestInput.gesture === 1 || this.latestInput.gesture === 3) { // CLOSED: Retract tight
         this.mockFlailPos.x += (this.mockPlayerPos.x - this.mockFlailPos.x) * 0.8;
         this.mockFlailPos.y += (this.mockPlayerPos.y - this.mockFlailPos.y) * 0.8;
-      } else if (this.latestInput.gesture === 2) { // PINCH: Attack (detach)
+      } else if (this.latestInput.gesture === 2) { // POINT: Attack (detach)
         isDetached = true;
         // Mock it shooting off slightly
         this.mockFlailPos.y -= 5;
