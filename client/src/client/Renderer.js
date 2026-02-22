@@ -1,9 +1,24 @@
 import { GESTURES } from "./HandHeuristics.js";
 
 // Helpers
-// Generates a distinct color for any given integer ID using the Golden Ratio
+// Generates a distinct color for any given ID using the Golden Ratio
 function getColorForId(id) {
-  const hue = (id * 137.508) % 360;
+  // 1. Handle missing IDs
+  if (id === null || id === undefined) return "#aaa"; // Default grey
+
+  // 2. Ensure ID is a number (handle string IDs from server)
+  // Simple hash function for strings
+  let numericId = 0;
+  if (typeof id === 'number') {
+    numericId = id;
+  } else if (typeof id === 'string') {
+    for (let i = 0; i < id.length; i++) {
+      numericId = id.charCodeAt(i) + ((numericId << 5) - numericId);
+    }
+  }
+
+  // 3. Generate Color
+  const hue = Math.abs((numericId * 137.508) % 360);
   return `hsl(${hue}, 70%, 60%)`;
 }
 
@@ -25,6 +40,42 @@ function ColorLuminance(hsl, factor) {
   return `hsl(${h}, ${s}%, ${newL.toFixed(2)}%)`;
 }
 
+// Draws a spikey polygon (Mace/Morningstar shape)
+function drawSpikeyFlail(ctx, x, y, baseRadius, fillStyle, strokeStyle, time) {
+  // Scale the number of spikes based on how big the flail is
+  const numSpikes = Math.max(6, Math.floor(baseRadius / 2)); 
+  const innerRadius = baseRadius;
+  const outerRadius = baseRadius * 1.35; // Spikes stick out 35% further
+  const rotation = time / 500; // Slow continuous rotation
+
+  ctx.fillStyle = fillStyle;
+  ctx.strokeStyle = strokeStyle;
+  ctx.lineWidth = 1;
+  
+  ctx.beginPath();
+  for (let i = 0; i < numSpikes * 2; i++) {
+    // Alternate between outer (spike tip) and inner (base) radius
+    const currentRadius = i % 2 === 0 ? outerRadius : innerRadius;
+    const angle = (Math.PI * 2 / (numSpikes * 2)) * i + rotation;
+    
+    const ptX = x + Math.cos(angle) * currentRadius;
+    const ptY = y + Math.sin(angle) * currentRadius;
+    
+    if (i === 0) ctx.moveTo(ptX, ptY);
+    else ctx.lineTo(ptX, ptY);
+  }
+  ctx.closePath();
+  
+  // Add a drop shadow for depth
+  ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetY = 5;
+  
+  ctx.fill();
+  
+  ctx.shadowColor = "transparent"; // Reset shadow for stroke
+  ctx.stroke();
+}
 
 export class GameRenderer {
   constructor(canvas) {
@@ -107,22 +158,29 @@ export class GameRenderer {
         if (owner) {
           ctx.strokeStyle = "#666";
           ctx.lineWidth = 3 + radius / 10;
+
+          ctx.setLineDash([ctx.lineWidth * 2, ctx.lineWidth]); // Dashed line
           ctx.beginPath();
           ctx.moveTo(owner.x, owner.y);
           ctx.lineTo(f.x, f.y);
           ctx.stroke();
+          ctx.setLineDash([]); // Reset line dash
         }
       }
 
-      // If detached, color it red to indicate danger. Otherwise, match player color.
-      ctx.fillStyle = f.isDetached ? ColorLuminance(playerColor, 0.3) : playerColor;
-      
-      ctx.beginPath();
-      ctx.arc(f.x, f.y, radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = "rgba(0,0,0,0.5)";
-      ctx.stroke();
+      // If detached, color it brighter with red outline to indicate danger. Otherwise, match player color.
+      const fillColor = f.isDetached ? ColorLuminance(playerColor, 0.3) : playerColor;
+      const strokeColor = f.isDetached ? "#ff0000" : "rgba(0,0,0,0.8)";
+      // Draw the spikey shape!
+      drawSpikeyFlail(ctx, f.x, f.y, radius, fillColor, strokeColor, Date.now());
+
+      // ctx.fillStyle = f.isDetached ? ColorLuminance(playerColor, 0.3) : playerColor;
+      // ctx.beginPath();
+      // ctx.arc(f.x, f.y, radius, 0, Math.PI * 2);
+      // ctx.fill();
+      // ctx.lineWidth = 2;
+      // ctx.strokeStyle = "rgba(0,0,0,0.5)";
+      // ctx.stroke();
     });
 
     // 6. Draw Players
@@ -164,7 +222,7 @@ export class GameRenderer {
     this.ctx.strokeRect(0, 0, width, height);
 
     // Draw Grid Pattern
-    this.ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+    this.ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
     this.ctx.lineWidth = 1;
     this.ctx.beginPath();
     const gridSize = 100;
