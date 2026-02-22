@@ -29,7 +29,15 @@ function dotProduct(v1, v2) {
 }
 
 export function processHandData(landmarks) {
-// 1. Calculate Average Position (Center of mass)
+  // 0. Check if hand not found, return none
+  if (!landmarks || landmarks.length === 0) {
+    return {
+      // position: { x: 0.5, y: 0.5, z: 0 }, // Return center by default to prevent crashes
+      gesture: GESTURES.NONE // This is -1
+    };
+  }
+
+  // 1. Calculate Average Position (Center of mass)
   let sumX = 0, sumY = 0, sumZ = 0;
   for (const lm of landmarks) {
     sumX += lm.x; sumY += lm.y; sumZ += lm.z;
@@ -70,7 +78,7 @@ export function processHandData(landmarks) {
   }
 
   // 4. Evaluate Heuristics (Order of Priority matters!)
-  let detectedGesture = GESTURES.NONE; // Default state
+  let detectedGesture = GESTURES.OPEN; // Default state
 
   // A. Check for PINCH
   // Since landmarks are normalized (0 to 1), a distance of 0.09 is quite close.

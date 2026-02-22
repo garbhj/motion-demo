@@ -112,35 +112,84 @@ body, html {
 .icon-btn:hover { background: rgba(255,255,255,0.2); }
 .icon { font-family: serif; font-weight: bold; font-style: italic; font-size: 1.2rem; }
 
+/* --- Info Modal Layout --- */
 .modal-overlay {
   position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(0,0,0,0.85); z-index: 300;
-  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.85); /* Darker than main menu */
+  backdrop-filter: blur(5px);
+  display: flex; justify-content: center; align-items: center;
+  z-index: 300; /* Higher than main menu */
+  opacity: 1;
+  transition: opacity 0.3s ease;
 }
 
-.modal-content {
-  background: var(--surface-color); width: 90%; max-width: 400px;
-  border-radius: 12px; overflow: hidden; border: 1px solid #333;
+/* Helper to  hide it with animation support */
+.modal-overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .modal-header {
-  padding: 15px 20px; border-bottom: 1px solid #333;
+  padding: 15px 20px; 
+  border-bottom: 1px solid rgba(255,255,255,0.1);
   display: flex; justify-content: space-between; align-items: center;
 }
-.modal-header h2 { margin: 0; font-size: 1.1rem; }
-.close-btn { background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer; }
+.modal-header h2 { margin: 0; font-size: 1.1rem; color: white; }
 
-.modal-body { padding: 20px; }
+.close-btn { 
+  background: none; border: none; color: #888; 
+  font-size: 1.8rem; cursor: pointer; line-height: 1; 
+  padding: 0 5px;
+}
+.close-btn:hover { color: white; }
+
+.modal-content {
+  background: var(--surface-color); 
+  width: 90%; 
+  max-width: 450px; /* Slightly wider for better text flow */
+  border-radius: 12px; 
+  overflow: hidden; 
+  border: 1px solid #333;
+  box-shadow: 0 25px 50px rgba(0,0,0,0.8);
+}
+
+.modal-body { padding: 20px 25px; }
+
+.tracking-blurb {
+  font-size: 0.85rem;
+  color: #bbb;
+  line-height: 1.5;
+  background: rgba(0, 188, 212, 0.08); /* Faint cyan background */
+  border-left: 3px solid var(--primary);
+  padding: 12px 15px;
+  border-radius: 4px;
+  margin-bottom: 25px;
+}
+.tracking-blurb strong { color: white; }
+
 .instruction-list { list-style: none; padding: 0; margin: 0; }
 .instruction-list li {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px;
+  display: flex; 
+  align-items: center;
+  margin-bottom: 12px; 
+  border-bottom: 1px solid rgba(255,255,255,0.05); 
+  padding-bottom: 12px;
 }
-.instruction-list li:last-child { border-bottom: none; margin-bottom: 0; }
+.instruction-list li:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+
 .key {
-  font-weight: bold; color: var(--primary); text-transform: uppercase; font-size: 0.85rem;
+  font-weight: 800; 
+  color: var(--primary); 
+  font-size: 0.85rem;
+  width: 100px; /* Fixed width keeps everything aligned */
+  flex-shrink: 0;
 }
-.instruction-list span:last-child { font-size: 0.9rem; color: #ccc; text-align: right; width: 60%; }
+
+.desc { 
+  font-size: 0.95rem; 
+  color: #ddd; 
+  line-height: 1.4;
+}
 
 /* --- In Game UI --- */
 .ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
@@ -157,25 +206,69 @@ body, html {
 
 /* --- PiP HUD --- */
 #pip_container {
-  position: fixed; bottom: 20px; right: 20px; width: 280px;
-  background: black; border-radius: 8px; overflow: hidden;
+  position: fixed; 
+  bottom: 20px; 
+  right: 20px; 
+  width: 280px;
+  background: black; 
+  border-radius: 8px; 
+  border: 1px solid #333; 
   box-shadow: 0 5px 20px rgba(0,0,0,0.5);
-  border: 1px solid #333; z-index: 100;
-  transition: transform 0.3s ease;
+  z-index: 9999; /* Always on top */
+  
+  /* Animate location and corners */
+  transition: bottom 0.4s cubic-bezier(0.25, 0.8, 0.25, 1), 
+              border-radius 0.4s ease; 
+  overflow: hidden; /* Essential for masking the video slide */
 }
-#pip_container.minimized { transform: translateY(calc(100% - 30px)); }
+
+/* The wrapper that holds the video */
+.pip-video-wrapper { 
+  position: relative; 
+  width: 100%; 
+  aspect-ratio: 4/3; 
+  background: #000;
+  
+  /* Animation Props */
+  max-height: 300px; /* Arbitrary large number larger than actual height */
+  opacity: 1;
+  transition: max-height 0.4s cubic-bezier(0.25, 0.8, 0.25, 1), 
+              opacity 0.3s ease;
+}
+
+#webcam, #debug_canvas { 
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+  transform: scaleX(-1); 
+}
+
+/* --- Minimized State --- */
+#pip_container.minimized { 
+  bottom: 0; /* Flush with bottom */
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom: none;
+}
+
+#pip_container.minimized .pip-video-wrapper { 
+  max-height: 0; /* Slides the video closed smoothly */
+  opacity: 0;    /* Fades it out slightly faster */
+}
 
 .pip-header {
-  background: #111; padding: 6px 10px;
-  display: flex; justify-content: space-between; align-items: center;
-  font-size: 0.7rem; letter-spacing: 1px; color: #666; font-weight: bold;
+  background: #111; 
+  padding: 8px 12px;
+  display: flex; 
+  justify-content: space-between; 
+  align-items: center;
+  font-size: 0.75rem; 
+  letter-spacing: 1px; 
+  color: #888; 
+  font-weight: bold;
+  border-bottom: 1px solid transparent; /* Prevents border jump */
+  position: relative;
+  z-index: 2; /* Ensures header sits on top of sliding video */
 }
-.recording-dot { width: 8px; height: 8px; background: red; border-radius: 50%; box-shadow: 0 0 5px red; }
-.pip-toggle { background: none; border: none; color: #666; font-size: 1.2rem; cursor: pointer; line-height: 1; }
-.pip-video-wrapper { position: relative; width: 100%; aspect-ratio: 4/3; background: #000; }
-#webcam, #debug_canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
-}
+.recording-dot { width: 8px; height: 8px; background: red; border-radius: 50%; box-shadow: 0 0 5px red; }
+.pip-toggle { background: none; border: none; color: #888; font-size: 1.5rem; cursor: pointer; line-height: 0.5; padding-bottom: 3px; }
+.pip-toggle:hover { color: white; }

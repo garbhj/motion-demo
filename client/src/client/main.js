@@ -16,6 +16,30 @@ const enableCameraBtn = document.getElementById("enableCameraBtn");
 const playBtn = document.getElementById("startGameBtn");
 const playerNameInput = document.getElementById("playerName");
 
+// --- Info Modal Logic ---
+const infoBtn = document.getElementById("infoBtn");
+const infoModal = document.getElementById("infoModal");
+const closeInfoBtn = document.getElementById("closeInfoBtn");
+
+// Ensure elements exist before adding listeners
+if (infoBtn && infoModal && closeInfoBtn) {
+  const toggleModal = (show) => {
+    if (show) infoModal.classList.remove("hidden");
+    else infoModal.classList.add("hidden");
+  };
+
+  // Open modal
+  infoBtn.addEventListener("click", () => toggleModal(true));
+  
+  // Close modal via X button
+  closeInfoBtn.addEventListener("click", () => toggleModal(false));
+  
+  // Close modal by clicking the dark background outside the modal
+  infoModal.addEventListener("click", (e) => {
+    if (e.target === infoModal) toggleModal(false);
+  });
+}
+
 // Modules
 const tracker = new HandTracker();
 const network = new NetworkManager();
@@ -65,20 +89,6 @@ async function boot() {
 
   enableCameraBtn.addEventListener("click", toggleCamera);
   playBtn.addEventListener("click", startGame);
-
-  // Logic for the Info Modal
-  const toggleModal = (show) => {
-    if(show) infoModal.classList.remove("hidden");
-    else infoModal.classList.add("hidden");
-  };
-
-  infoBtn.addEventListener("click", () => toggleModal(true));
-  closeInfoBtn.addEventListener("click", () => toggleModal(false));
-  
-  // Close modal if clicking outside the box
-  infoModal.addEventListener("click", (e) => {
-    if (e.target === infoModal) toggleModal(false);
-  });
   
   document.getElementById("togglePipBtn").addEventListener("click", () => {
     pipContainer.classList.toggle("minimized");
