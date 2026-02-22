@@ -22,23 +22,23 @@ export class NetworkManager {
     this.interpDelayMs = 100;
 
     // Server URLs: set in Vercel so the build bakes them in (redeploy after adding).
-    // VITE_WS_URL = full WebSocket URL, e.g. wss://xxx.ngrok-free.app/ws
-    // VITE_API_URL = optional HTTP base for /rooms; if unset, derived from VITE_WS_URL (https vs http, same host)
+    // VITE_WS_URL = WebSocket URL (e.g. wss://xxx.ngrok-free.app/ws). VITE_API_URL = HTTP base for /rooms (e.g. https://xxx.ngrok-free.app).
     const env = typeof import.meta !== "undefined" ? import.meta.env : {};
     this.serverUrl = env.VITE_WS_URL || "ws://localhost:8080/ws";
-    if (env.VITE_API_URL) {
-      this.apiBase = env.VITE_API_URL.replace(/\/$/, ""); // trim trailing slash
-    } else {
-      const u = new URL(this.serverUrl);
-      this.apiBase = (u.protocol === "wss:" ? "https:" : "http:") + "//" + u.host;
-    }
+    // HTTP (list/create rooms) uses VITE_API_URL when set; otherwise derived from VITE_WS_URL for local dev.
+    this.apiBase = env.VITE_API_URL
+      ? String(env.VITE_API_URL).replace(/\/$/, "")
+      : (() => {
+          const u = new URL(this.serverUrl);
+          return (u.protocol === "wss:" ? "https:" : "http:") + "//" + u.host;
+        })();
     // Warn if we're on Vercel/production but still pointing at localhost (env not set at build time)
     if (typeof window !== "undefined" && window.location?.host && !/^localhost$|^127\.0\.0\.1$/.test(window.location.host)) {
       try {
         const apiHost = new URL(this.apiBase).host;
         if (/^localhost$|^127\.0\.0\.1$/.test(apiHost)) {
           console.error(
-            "[Motion.io] API is set to localhost but the app is not. Set VITE_WS_URL (and optionally VITE_API_URL) in Vercel Environment Variables, then redeploy."
+            "[Motion.io] API is set to localhost but the app is not. Set VITE_WS_URL and VITE_API_URL in Vercel Environment Variables, then redeploy."
           );
         }
       } catch (_) {}
