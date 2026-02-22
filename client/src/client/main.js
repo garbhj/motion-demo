@@ -63,12 +63,17 @@ function recenterJoystick() {
   trackingCenter.y = localInput.y;
 }
 
-// Handle window resizing
+// Handle window resizing (high-DPI: buffer at devicePixelRatio for sharp rendering)
 function resizeCanvas() {
-  gameCanvas.width = window.innerWidth;
-  gameCanvas.height = window.innerHeight;
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  gameCanvas.width = w * dpr;
+  gameCanvas.height = h * dpr;
+  gameCanvas.style.width = w + "px";
+  gameCanvas.style.height = h + "px";
 }
-window.addEventListener('resize', resizeCanvas);
+window.addEventListener("resize", resizeCanvas);
 resizeCanvas();
 
 async function boot() {

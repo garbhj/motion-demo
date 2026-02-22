@@ -85,7 +85,7 @@ func (r *Room) handleCommand(cmd any) {
 			if name == "" {
 				name = fmt.Sprintf("Player %d", idNum)
 			}
-			r.state.Players[playerID] = &game.Player{ID: playerID, Name: name, X: spawn, Y: spawn}
+			r.state.Players[playerID] = &game.Player{ID: playerID, Name: name, X: spawn, Y: spawn, Stamina: game.StaminaMax, Score: 0}
 		}
 		if _, ok := r.state.Orbs[playerID]; !ok {
 			px := r.state.Players[playerID].X
@@ -177,14 +177,16 @@ func (r *Room) buildSnapshot() protocol.State {
 	}
 	for id, p := range r.state.Players {
 		snapshot.Players = append(snapshot.Players, protocol.PlayerSnapshot{
-			ID:   id,
-			Name: p.Name,
-			X:    p.X,
-			Y:    p.Y,
+			ID:      id,
+			Name:    p.Name,
+			X:       p.X,
+			Y:       p.Y,
+			Stamina: p.Stamina,
+			Score:   p.Score,
 		})
 	}
 	for _, e := range r.state.Eliminated {
-		snapshot.Eliminated = append(snapshot.Eliminated, protocol.EliminatedSnapshot{ID: e.ID, Name: e.Name})
+		snapshot.Eliminated = append(snapshot.Eliminated, protocol.EliminatedSnapshot{ID: e.ID, Name: e.Name, Score: e.Score})
 	}
 	for _, o := range r.state.Orbs {
 		snapshot.Orbs = append(snapshot.Orbs, protocol.OrbSnapshot{

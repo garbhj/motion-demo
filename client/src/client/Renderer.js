@@ -41,15 +41,19 @@ export class GameRenderer {
     this.ctx = canvas.getContext("2d");
   }
 
-  // Called every frame by main.js
+  // Called every frame by main.js (uses high-DPI scaling for sharp text and shapes)
   render(worldState, localPlayerId, localInput, trackingCenter) {
     const ctx = this.ctx;
-    const width = this.canvas.width;
-    const height = this.canvas.height;
+    const dpr = this.canvas.width / this.canvas.clientWidth;
+    const width = this.canvas.clientWidth;
+    const height = this.canvas.clientHeight;
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(dpr, dpr);
 
     // 1. Clear Screen
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = "#111"; // Deep background color
+    ctx.fillStyle = "#111";
     ctx.fillRect(0, 0, width, height);
 
     // 2. Find Local Player for Camera Tracking
@@ -81,7 +85,9 @@ export class GameRenderer {
       ctx.strokeRect(obs.x, obs.y, obs.width, obs.height);
     });
 
-    // 5. Draw Orbs (Behind players)
+    // 5. Draw Orbs (Behind players) — high quality: shadow + crisp fill/stroke
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
     (worldState.orbs || []).forEach(o => {
       const owner = worldState.players.find(p => p.id === o.ownerId);
       const playerColor = owner ? getColorForId(owner.id) : "#aaa";
@@ -93,14 +99,22 @@ export class GameRenderer {
       } else if (o.mode === 2) {
         orbColor = ColorLuminance(playerColor, -0.1);
       }
-      
+
+      ctx.save();
+      ctx.shadowColor = "rgba(0,0,0,0.4)";
+      ctx.shadowBlur = 8;
+      ctx.shadowOffsetY = 2;
       ctx.fillStyle = orbColor;
       ctx.beginPath();
       ctx.arc(o.x, o.y, radius, 0, Math.PI * 2);
       ctx.fill();
+      ctx.shadowColor = "transparent";
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
       ctx.lineWidth = 2;
-      ctx.strokeStyle = "rgba(0,0,0,0.5)";
+      ctx.strokeStyle = "rgba(0,0,0,0.35)";
       ctx.stroke();
+      ctx.restore();
     });
 
     // 6. Draw Players
@@ -117,11 +131,13 @@ export class GameRenderer {
       ctx.lineWidth = p.id === localPlayerId ? 4 : 2;
       ctx.stroke();
 
-      // Names
+      // Names — crisp text: rounded coordinates, system font
       ctx.fillStyle = "white";
-      ctx.font = "bold 14px sans-serif";
+      ctx.font = "600 14px system-ui, -apple-system, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(p.name || `Player ${p.id} \n Score ${p.score}`, p.x, p.y - 35);
+      ctx.textBaseline = "middle";
+      const nameY = Math.round(p.y - 35);
+      ctx.fillText(p.name || `Player ${p.id}`, Math.round(p.x), nameY);
     });
 
     // --- RESTORE CAMERA ---
@@ -130,8 +146,51 @@ export class GameRenderer {
     // 7. Leaderboard (top of screen)
     this.drawLeaderboard(worldState.players, worldState.eliminated || [], localPlayerId, width);
 
-    // 8. Draw HUD (Heads Up Display - Drawn fixed to the screen)
+    // 8. Sprint meter (local player only)
+    this.drawSprintMeter(me, width, height);
+
+    // 9. Draw HUD (Heads Up Display - Drawn fixed to the screen)
     this.drawJoystickHUD(localInput, trackingCenter, width, height);
+  }
+
+  drawSprintMeter(localPlayer, width, height) {
+    if (!localPlayer) return;
+    const ctx = this.ctx;
+    const stamina = Math.max(0, Math.min(100, localPlayer.stamina ?? 100));
+    const barWidth = 160;
+    const barHeight = 12;
+    const x = 20;
+    const y = height - 40;
+
+    ctx.font = "600 11px system-ui, -apple-system, sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+    ctx.fillText("Sprint", x, y - barHeight);
+
+    ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(x, y, barWidth, barHeight, 6);
+    } else {
+      ctx.rect(x, y, barWidth, barHeight);
+    }
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    const fillWidth = (stamina / 100) * (barWidth - 4);
+    if (fillWidth > 0) {
+      ctx.fillStyle = stamina > 25 ? "#fbbf24" : "#f87171";
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(x + 2, y + 2, fillWidth, barHeight - 4, 4);
+      } else {
+        ctx.rect(x + 2, y + 2, fillWidth, barHeight - 4);
+      }
+      ctx.fill();
+    }
   }
 
   drawLeaderboard(players, eliminated, localPlayerId, width) {
@@ -139,13 +198,14 @@ export class GameRenderer {
     const padding = 12;
     const rowHeight = 22;
     const fontSize = 14;
-    ctx.font = `bold ${fontSize}px sans-serif`;
-    ctx.textAlign = "left";
+    ctx.font = `600 ${fontSize}px system-ui, -apple-system, sans-serif`;
+    ctx.textBaseline = "middle";
 
-    const entries = [
-      ...players.map(p => ({ id: p.id, name: p.name || `Player ${p.id}`, alive: true })),
-      ...eliminated.map(e => ({ id: e.id, name: e.name || `Player ${e.id}`, alive: false }))
-    ];
+    const aliveEntries = (players || []).map(p => ({ id: p.id, name: p.name || `Player ${p.id}`, score: p.score ?? 0, alive: true }));
+    const outEntries = (eliminated || []).map(e => ({ id: e.id, name: e.name || `Player ${e.id}`, score: e.score ?? 0, alive: false }));
+    aliveEntries.sort((a, b) => b.score - a.score);
+    outEntries.sort((a, b) => b.score - a.score);
+    const entries = [...aliveEntries, ...outEntries];
     if (entries.length === 0) return;
 
     const boxWidth = Math.min(320, width - 40);
@@ -166,11 +226,12 @@ export class GameRenderer {
     ctx.fill();
     ctx.stroke();
 
+    ctx.textAlign = "left";
     ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
-    ctx.fillText("Leaderboard", x + padding, y + padding + fontSize);
+    ctx.fillText("Leaderboard", Math.round(x + padding), Math.round(y + padding + fontSize * 0.5));
 
     entries.forEach((entry, i) => {
-      const yy = y + padding + titleRow + i * rowHeight;
+      const yy = y + padding + titleRow + i * rowHeight + fontSize * 0.5;
       const isMe = entry.id === localPlayerId;
       if (entry.alive) {
         ctx.fillStyle = isMe ? "#00bcd4" : "rgba(255, 255, 255, 0.95)";
@@ -178,7 +239,11 @@ export class GameRenderer {
         ctx.fillStyle = isMe ? "rgba(255, 100, 100, 0.9)" : "rgba(160, 160, 160, 0.9)";
       }
       const label = entry.alive ? entry.name : `${entry.name} (out)`;
-      ctx.fillText(label, x + padding, yy + fontSize - 2);
+      const pts = Math.round(entry.score);
+      ctx.textAlign = "left";
+      ctx.fillText(label, Math.round(x + padding), Math.round(yy));
+      ctx.textAlign = "right";
+      ctx.fillText(`${pts} pts`, Math.round(x + boxWidth - padding), Math.round(yy));
     });
   }
 

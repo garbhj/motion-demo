@@ -14,11 +14,27 @@ func Step(s *State, inputs map[string]Input) {
 		ax := inp.Ax
 		ay := inp.Ay
 		mag := math.Hypot(ax, ay)
+
+		sprinting := inp.Boost && p.Stamina > 0
+		maxSpeed := MaxSpeedNormal
+		if sprinting {
+			maxSpeed = MaxSpeedSprint
+			p.Stamina -= StaminaDepletePerTick
+			if p.Stamina < 0 {
+				p.Stamina = 0
+			}
+		} else {
+			p.Stamina += StaminaRegenPerTick
+			if p.Stamina > StaminaMax {
+				p.Stamina = StaminaMax
+			}
+		}
+
 		if mag > Deadzone {
 			nx := ax / mag
 			ny := ay / mag
 			accel := AccelPerTick
-			if inp.Boost {
+			if sprinting {
 				accel *= BoostMult
 			}
 			p.VX += nx * accel
@@ -29,8 +45,8 @@ func Step(s *State, inputs map[string]Input) {
 		p.VY /= PlayerDampingDiv
 
 		speed := math.Hypot(p.VX, p.VY)
-		if speed > MaxSpeed {
-			scale := MaxSpeed / speed
+		if speed > maxSpeed {
+			scale := maxSpeed / speed
 			p.VX *= scale
 			p.VY *= scale
 		}
@@ -55,10 +71,13 @@ func Step(s *State, inputs map[string]Input) {
 			p.Y = MapHeight - PlayerRadius
 			p.VY = 0
 		}
+		// Passive: points for staying alive in the lobby
+		p.Score += PointsPerTickAlive
 	}
 
 	// Orb tick: check for orb hitting other players (elimination)
-	var toEliminate []string
+	type kill struct{ victimID, killerID string }
+	var kills []kill
 	for ownerID, orb := range s.Orbs {
 		if orb.Mode != OrbShot {
 			continue
@@ -75,16 +94,22 @@ func Step(s *State, inputs map[string]Input) {
 			dy := orb.Y - other.Y
 			dist := math.Hypot(dx, dy)
 			if dist < PlayerRadius+OrbHitRadius {
-				toEliminate = append(toEliminate, otherID)
+				kills = append(kills, kill{victimID: otherID, killerID: ownerID})
 			}
 		}
 	}
-	for _, id := range toEliminate {
-		if p, ok := s.Players[id]; ok {
-			s.Eliminated = append(s.Eliminated, EliminatedEntry{ID: id, Name: p.Name})
+	for _, k := range kills {
+		victim, vOk := s.Players[k.victimID]
+		killer, kOk := s.Players[k.killerID]
+		if vOk {
+			s.Eliminated = append(s.Eliminated, EliminatedEntry{ID: k.victimID, Name: victim.Name, Score: victim.Score})
 		}
-		delete(s.Players, id)
-		delete(s.Orbs, id)
+		if kOk && killer != nil && vOk {
+			// Active: base kill reward. Very active: bonus from victim's score
+			killer.Score += PointsPerKill + victim.Score*PointsStealFraction
+		}
+		delete(s.Players, k.victimID)
+		delete(s.Orbs, k.victimID)
 	}
 
 	// Orb tick
@@ -123,8 +148,11 @@ func Step(s *State, inputs map[string]Input) {
 			}
 
 		case OrbShot:
-			orb.VX /= OrbDampingDiv
-			orb.VY /= OrbDampingDiv
+			// Don't damp on the first tick so launch feels instant and smooth
+			if orb.ShotTicksLeft < OrbShotDurationTicks {
+				orb.VX /= OrbDampingDiv
+				orb.VY /= OrbDampingDiv
+			}
 			orb.X += orb.VX
 			orb.Y += orb.VY
 			orb.ShotTicksLeft--
@@ -137,14 +165,22 @@ func Step(s *State, inputs map[string]Input) {
 			}
 
 		case OrbReturn:
-			// Keep orbit angle advancing so when we snap back we're in sync
 			orb.Angle += OrbAngularSpeedPerTick
 			orbitX := player.X + math.Cos(orb.Angle)*OrbOrbitRadius
 			orbitY := player.Y + math.Sin(orb.Angle)*OrbOrbitRadius
 
-			// Pull orb straight back to orbit circle (fixed radius), no wire
-			orb.X += (orbitX - orb.X) * 0.18
-			orb.Y += (orbitY - orb.Y) * 0.18
+			// Move toward orbit point at constant speed for smooth fly-back
+			toX := orbitX - orb.X
+			toY := orbitY - orb.Y
+			distToTarget := math.Hypot(toX, toY)
+			if distToTarget > 0.1 {
+				move := OrbReturnMaxSpeed
+				if distToTarget < move {
+					move = distToTarget
+				}
+				orb.X += toX / distToTarget * move
+				orb.Y += toY / distToTarget * move
+			}
 
 			dist := math.Hypot(orb.X-player.X, orb.Y-player.Y)
 			if math.Abs(dist-OrbOrbitRadius) < OrbReturnSnapDist {

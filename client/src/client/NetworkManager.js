@@ -26,7 +26,7 @@ export class NetworkManager {
       this.serverUrl = envUrl;
     } else {
       const proto = window.location.protocol === "https:" ? "wss" : "ws";
-      this.serverUrl = `${proto}://localhost:8080/ws`;
+      this.serverUrl = `wss://2249-2620-101-c040-7e5-7d22-19b6-3d7e-9662.ngrok-free.app/ws`;
     }
     const u = new URL(this.serverUrl);
     this.apiBase = (u.protocol === "wss:" ? "https:" : "http:") + "//" + u.host;
@@ -186,7 +186,7 @@ export class NetworkManager {
   buildWorldFromSnapshot(st) {
     const players = this.normalizePlayers(st?.players);
     const orbs = this.normalizeOrbs(st?.orbs);
-    const eliminated = (st?.eliminated || []).map(e => ({ id: String(e.id), name: e.name || `Player ${e.id}` }));
+    const eliminated = (st?.eliminated || []).map(e => ({ id: String(e.id), name: e.name || `Player ${e.id}`, score: e.score ?? 0 }));
 
     return {
       mapConfig: this.mapConfig,
@@ -208,7 +208,7 @@ export class NetworkManager {
     const players = this.mergeAndInterpolate(aPlayers, bPlayers, alpha);
     const orbs = this.mergeAndInterpolate(aOrbs, bOrbs, alpha, true);
 
-    const eliminated = (bState?.eliminated || []).map(e => ({ id: String(e.id), name: e.name || `Player ${e.id}` }));
+    const eliminated = (bState?.eliminated || []).map(e => ({ id: String(e.id), name: e.name || `Player ${e.id}`, score: e.score ?? 0 }));
 
     return {
       mapConfig: this.mapConfig,
@@ -234,7 +234,8 @@ export class NetworkManager {
         y: p.y,
         vx: p.vx ?? 0,
         vy: p.vy ?? 0,
-        radius: p.radius ?? 25
+        radius: p.radius ?? 25,
+        stamina: p.stamina ?? 100
       };
     }
     return out;
@@ -293,7 +294,8 @@ export class NetworkManager {
           y,
           vx: b.vx ?? a.vx ?? 0,
           vy: b.vy ?? a.vy ?? 0,
-          radius: b.radius ?? a.radius ?? 25
+          radius: b.radius ?? a.radius ?? 25,
+          stamina: b.stamina ?? a.stamina ?? 100
         });
       }
     }

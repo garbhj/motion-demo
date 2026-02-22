@@ -13,16 +13,19 @@ type State struct {
 }
 
 type PlayerSnapshot struct {
-	ID   string  `json:"id"`
-	Name string  `json:"name,omitempty"`
-	X    float64 `json:"x"`
-	Y    float64 `json:"y"`
-	A    float64 `json:"a,omitempty"`
+	ID      string  `json:"id"`
+	Name    string  `json:"name,omitempty"`
+	X       float64 `json:"x"`
+	Y       float64 `json:"y"`
+	A       float64 `json:"a,omitempty"`
+	Stamina float64 `json:"stamina,omitempty"`
+	Score   float64 `json:"score,omitempty"`
 }
 
 type EliminatedSnapshot struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID    string  `json:"id"`
+	Name  string  `json:"name"`
+	Score float64 `json:"score,omitempty"`
 }
 
 type OrbSnapshot struct {
