@@ -5,10 +5,11 @@ import ()
 // Internal truth authoritative game state
 
 type State struct {
-	Tick    uint64
+	Tick    int
 	Players map[string]*Player
 }
 
 type Player struct {
-	X, Y, VX, VY float32
+	ID           string
+	X, Y, VX, VY float64
 }

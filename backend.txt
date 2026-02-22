@@ -1,12 +1,31 @@
 Backend gist (server/):
 
-- Entry point: server/main.go prints two debug lines then calls network.Start().
-- Network: server/network/network.go starts an HTTP server with a WebSocket endpoint at /ws. It upgrades connections and loops on incoming messages.
-- Protocol: server/protocol defines a JSON envelope {t,p} with message types hello, input, welcome, state. Encode/Decode helpers handle envelope and payloads.
-- On hello: server logs version/name and replies with a Welcome payload (PlayerID "p1", TickHz 20). On input: logs ax/ay/boost. Unknown types are logged.
-- Config: server/config loads .env via godotenv and reads required env var NETWORK_ADDR to bind the server. It logs and fatal-exits on missing env.
-- Game state: server/game has State (tick, players) and Input structs. Step() is stubbed.
-- Room: server/room has a Room with inbox channel and stub Run(); messages.go is empty.
-- Dependencies: gorilla/websocket and godotenv (see server/go.mod).
+- Entry point: `server/main.go` prints debug lines and calls `network.Start()`.
+- Network layer: `server/network/network.go` starts an HTTP server and upgrades `/ws` to WebSocket. Per-connection loop reads messages, decodes a JSON envelope, switches on type, and logs results.
+- Protocol: `server/protocol` defines envelope `{t,p}` and message types (`hello`, `input`, `welcome`, `state`). Encode/Decode helpers marshal/unmarshal payloads.
+- Message handling:
+  - `hello`: logs version/name, replies with `welcome` containing `PlayerID` and `TickHz`.
+  - `input`: logs `ax/ay/boost`.
+  - unknown types: logged as warnings.
+- Config: `server/config` loads `.env` via `godotenv` and requires `NETWORK_ADDR` to bind the server (fatal if missing).
+- Game and room stubs: `server/game` defines `State`, `Player`, and `Input`; `Step()` is not implemented. `server/room` defines a `Room` with an inbox channel; `Run()` is stubbed.
+- Dependencies: `gorilla/websocket` and `godotenv` (see `server/go.mod`).
 
-Overall: a minimal WebSocket server that speaks a small JSON protocol and logs incoming messages, with placeholders for game simulation and room management.
+Overall: a minimal Go WebSocket server with a JSON envelope protocol and placeholder game/room logic.
+
+---
+Planned server ↔ client interface (current protocol types):
+
+- Envelope for all messages (file: `server/protocol/protocol.go`):
+  - `Envelope{ T string, P json.RawMessage }` serialized as `{ t: string, p: json }`.
+- Inbound to server (from client):
+  - `protocol.Hello` (file: `server/protocol/client.go`): `{ v: int, name?: string }`.
+  - `protocol.Input` (file: `server/protocol/client.go`): `{ ax: float32, ay: float32, boost?: bool }`.
+- Outbound from server (to client):
+  - `protocol.Welcome` (file: `server/protocol/server.go`): `{ playerId: string, tickHz: int }`.
+  - `protocol.State` (file: `server/protocol/server.go`): `{ tick: uint64, players: PlayerSnapshot[] }`.
+  - `protocol.PlayerSnapshot` (file: `server/protocol/server.go`): `{ id: string, x: float32, y: float32, a?: float32 }`.
+- Network handling lives in `server/network/network.go` and currently only:
+  - Accepts `hello` and replies `welcome`.
+  - Accepts `input` and logs it.
+  - Does not yet emit `state` or maintain real game state.

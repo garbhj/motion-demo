@@ -132,7 +132,7 @@ function startGame() {
 
   trackingCenter = { x: 0.5, y: 0.5 };  // Reset the tracking center to middle upon starting
 
-  networkInterval = setInterval(networkLoop, 1000 / 20); // 20 FPS
+  networkInterval = setInterval(networkLoop, 1000 / 40); // 40 FPS
   renderFrameId = requestAnimationFrame(renderLoop);
 }
 
@@ -199,14 +199,15 @@ function networkLoop() {
   const deadzone = 0.02; // Proportion of screen
   const maxRadius = 0.25; // Max 
 
-  let moveVector = { moveX: 0, moveY: 0, gesture: localInput.gesture };
+  let moveVector = { ax: 0, ay: 0, boost: false };
 
   if (distance > deadzone) {
     // Cap at maxRadius and normalize to -1.0 to 1.0
     const clampedDist = Math.min(distance, maxRadius);
-    moveVector.moveX = (dx / distance) * (clampedDist / maxRadius);
-    moveVector.moveY = (dy / distance) * (clampedDist / maxRadius);
+    moveVector.ax = (dx / distance) * (clampedDist / maxRadius);
+    moveVector.ay = (dy / distance) * (clampedDist / maxRadius);
   }
+  moveVector.boost = localInput.gesture === GESTURES.POINT;
 
   // Send Analog Vector to server
   network.sendPlayerInput(moveVector);
