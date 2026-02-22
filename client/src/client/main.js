@@ -199,11 +199,32 @@ async function onCreateLobby() {
   createLobbyBtn.disabled = false;
   createLobbyBtn.textContent = "+ Create lobby";
   if (code) {
+    // Refresh list (may fail on CORS/cache); then optimistically show the new room and join
     await refreshRoomList();
+    ensureRoomInList(code, 1);
     joinRoom(code);
   } else {
     alert("Could not create lobby. Open the browser console (F12) to see the API URL and error. On Vercel, set VITE_API_URL and VITE_WS_URL in Environment Variables and redeploy.");
   }
+}
+
+function ensureRoomInList(code, players) {
+  if (!roomListEl || !roomListEmptyEl) return;
+  const existing = roomListEl.querySelector(`[data-code="${escapeHtml(code)}"]`);
+  if (existing) return;
+  roomListEmptyEl.classList.add("hidden");
+  const li = document.createElement("li");
+  li.className = "room-item";
+  li.innerHTML = `<span class="room-code">${escapeHtml(code)}</span><span class="room-players">${players} player${players !== 1 ? "s" : ""}</span>`;
+  li.dataset.code = code;
+  li.addEventListener("click", () => {
+    if (!isCameraActive) {
+      alert("Please initialize the camera first to play.");
+      return;
+    }
+    joinRoom(code);
+  });
+  roomListEl.appendChild(li);
 }
 
 function joinRoom(code) {

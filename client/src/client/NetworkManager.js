@@ -60,12 +60,23 @@ export class NetworkManager {
   async fetchRooms() {
     const url = `${this.apiBase}/rooms`;
     try {
-      const res = await fetch(url, { headers: this.apiHeaders, mode: "cors" });
+      const res = await fetch(url, {
+        headers: this.apiHeaders,
+        mode: "cors",
+        cache: "no-store",
+        credentials: "omit"
+      });
       if (!res.ok) {
         console.warn("[Motion.io] fetchRooms failed:", res.status, res.statusText, url);
         return [];
       }
-      return await res.json();
+      const ct = res.headers.get("Content-Type") || "";
+      if (!ct.includes("application/json")) {
+        console.warn("[Motion.io] fetchRooms got non-JSON response:", ct?.slice(0, 50), url);
+        return [];
+      }
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
     } catch (e) {
       console.warn("[Motion.io] fetchRooms error:", e?.message || e, "URL:", url);
       return [];
@@ -75,10 +86,21 @@ export class NetworkManager {
   async createRoom() {
     const url = `${this.apiBase}/rooms`;
     try {
-      const res = await fetch(url, { method: "POST", headers: this.apiHeaders, mode: "cors" });
+      const res = await fetch(url, {
+        method: "POST",
+        headers: this.apiHeaders,
+        mode: "cors",
+        cache: "no-store",
+        credentials: "omit"
+      });
       if (!res.ok) {
         const text = await res.text();
         console.warn("[Motion.io] createRoom failed:", res.status, res.statusText, url, text?.slice(0, 200));
+        return null;
+      }
+      const ct = res.headers.get("Content-Type") || "";
+      if (!ct.includes("application/json")) {
+        console.warn("[Motion.io] createRoom got non-JSON response:", ct?.slice(0, 50), url);
         return null;
       }
       const data = await res.json();

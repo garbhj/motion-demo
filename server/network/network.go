@@ -143,6 +143,7 @@ func listRoomsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 	rooms := manager.ListRooms()
 	_ = json.NewEncoder(w).Encode(rooms)
 }
@@ -153,6 +154,7 @@ func createRoomHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	code := manager.CreateRoom()
 	_ = json.NewEncoder(w).Encode(map[string]string{"code": code})
 }
