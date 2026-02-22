@@ -2,11 +2,27 @@ import { GESTURES } from "./HandHeuristics.js";
 
 // Helpers
 // Generates a distinct color for any given integer ID using the Golden Ratio
+// Renderer.js helpers
+
 function getColorForId(id) {
-  const hue = (id * 137.508) % 360;
+  // 1. Handle missing IDs
+  if (id === null || id === undefined) return "#aaa"; // Default grey
+
+  // 2. Ensure ID is a number (handle string IDs from server)
+  // Simple hash function for strings
+  let numericId = 0;
+  if (typeof id === 'number') {
+    numericId = id;
+  } else if (typeof id === 'string') {
+    for (let i = 0; i < id.length; i++) {
+      numericId = id.charCodeAt(i) + ((numericId << 5) - numericId);
+    }
+  }
+
+  // 3. Generate Color
+  const hue = Math.abs((numericId * 137.508) % 360);
   return `hsl(${hue}, 70%, 60%)`;
 }
-
 // The shared math function (Server should use this exact logic for collisions)
 function getFlailRadius(score) {
   const baseRadius = 12;
@@ -34,7 +50,7 @@ export class GameRenderer {
 
   // Called every frame by main.js
   render(worldState, localPlayerId, localInput, trackingCenter) {
-    // console.log("LocalInput" + localInput.x + localInput.y + "\nLocalPlayerId:" + localPlayerId);
+    console.log("LocalInput" + localInput.x + localInput.y + "\nLocalPlayerId:" + localPlayerId);
 
     const ctx = this.ctx;
     const width = this.canvas.width;

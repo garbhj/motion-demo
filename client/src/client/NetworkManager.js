@@ -23,7 +23,7 @@ export class NetworkManager {
     if (envUrl) {
       this.serverUrl = envUrl;
     } else {
-      this.serverUrl = "ws://localhost:8080/ws";
+      this.serverUrl = "wss://2249-2620-101-c040-7e5-7d22-19b6-3d7e-9662.ngrok-free.app/ws";
     }
   }
 
