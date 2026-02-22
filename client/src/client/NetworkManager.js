@@ -15,6 +15,16 @@ export class NetworkManager {
       { x: 1200, y: 1500, width: 300, height: 300 }
     ];
 
+    // Food pellets
+    this.mockFood = [];
+    for (let i = 0; i < 50; i++) {
+      this.mockFood.push({
+        id: 5000 + i, 
+        x: Math.random() * this.mapConfig.width,
+        y: Math.random() * this.mapConfig.height
+      });
+    }
+
     this.latestInput = { moveX: 0, moveY: 0, gesture: 0 };
   }
 
@@ -105,7 +115,8 @@ export class NetworkManager {
       mapConfig: this.mapConfig,
       obstacles: this.obstacles,
       players: [ { ...this.mockPlayer }, ...this.mockOpponents ],
-      flails: [ { ...this.mockFlail }, ...this.mockOpponentFlails ]
+      flails: [ { ...this.mockFlail }, ...this.mockOpponentFlails ],
+      food: this.mockFood
     };
   }
 }

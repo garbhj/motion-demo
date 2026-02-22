@@ -74,6 +74,25 @@ export class GameRenderer {
       ctx.strokeRect(obs.x, obs.y, obs.width, obs.height);
     });
 
+    // 4.5. Draw Orbs
+    if (worldState.food) {
+      worldState.food.forEach(f => {
+        // Use ID for base color, but make it very bright (luminance + 0.6)
+        const baseColor = getColorForId(f.id);
+        ctx.fillStyle = ColorLuminance(baseColor, 0.6); 
+        
+        ctx.beginPath();
+        // Give food a slight pulse effect using a sine wave based on time
+        const pulse = Math.sin(Date.now() / 200 + f.id) * 1.5; 
+        ctx.arc(f.x, f.y, 6 + pulse, 0, Math.PI * 2);
+        
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = ctx.fillStyle;
+        ctx.fill();
+        ctx.shadowBlur = 0; // reset
+      });
+    }
+
     // 5. Draw Flails (Behind players)
     worldState.flails.forEach(f => {
       // Find the owner to get their score and ID
