@@ -21,13 +21,7 @@ export class NetworkManager {
     this.snapB = null;
     this.interpDelayMs = 100;
 
-    const envUrl = import.meta?.env?.VITE_WS_URL;
-    if (envUrl) {
-      this.serverUrl = envUrl;
-    } else {
-      const proto = window.location.protocol === "https:" ? "wss" : "ws";
-      this.serverUrl = `wss://2249-2620-101-c040-7e5-7d22-19b6-3d7e-9662.ngrok-free.app/ws`;
-    }
+    this.serverUrl = "wss://2249-2620-101-c040-7e5-7d22-19b6-3d7e-9662.ngrok-free.app/ws";
     const u = new URL(this.serverUrl);
     this.apiBase = (u.protocol === "wss:" ? "https:" : "http:") + "//" + u.host;
   }
