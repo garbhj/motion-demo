@@ -1,5 +1,8 @@
+<<<<<<< HEAD
 # env files 
 .env 
 .env.*
 # wow, cool trick, this ignores all .env files in your whole project. :)
+=======
+>>>>>>> 1c345b0685d514671c14dd1aa9f81ac8fb228cc9
 .DS_Store
