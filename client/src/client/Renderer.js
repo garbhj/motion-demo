@@ -101,6 +101,19 @@ export class GameRenderer {
       const radius = getFlailRadius(score);
       const playerColor = owner ? getColorForId(owner.id) : "#aaa";
       
+      // Draw chain (Below both flail and player)
+      if (!f.isDetached && owner) {
+        const owner = worldState.players.find(p => p.id === f.ownerId);
+        if (owner) {
+          ctx.strokeStyle = "#666";
+          ctx.lineWidth = 3 + radius / 10;
+          ctx.beginPath();
+          ctx.moveTo(owner.x, owner.y);
+          ctx.lineTo(f.x, f.y);
+          ctx.stroke();
+        }
+      }
+
       // If detached, color it red to indicate danger. Otherwise, match player color.
       ctx.fillStyle = f.isDetached ? ColorLuminance(playerColor, 0.3) : playerColor;
       
@@ -110,19 +123,6 @@ export class GameRenderer {
       ctx.lineWidth = 2;
       ctx.strokeStyle = "rgba(0,0,0,0.5)";
       ctx.stroke();
-
-      // Draw chain
-      if (!f.isDetached && owner) {
-        const owner = worldState.players.find(p => p.id === f.ownerId);
-        if (owner) {
-          ctx.strokeStyle = "#666";
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          ctx.moveTo(owner.x, owner.y);
-          ctx.lineTo(f.x, f.y);
-          ctx.stroke();
-        }
-      }
     });
 
     // 6. Draw Players
