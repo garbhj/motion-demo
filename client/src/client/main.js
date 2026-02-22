@@ -211,15 +211,14 @@ function networkLoop() {
 
   // Send Analog Vector to server
   network.sendPlayerInput(moveVector);
-  worldState = network.getLatestWorldState(); 
 }
 
 // --- LOOP 3: Game Rendering (60+ FPS) ---
 function renderLoop() {
   if (!isPlaying) return; // Stop render loop if not playing
 
+  worldState = network.getLatestWorldState();
   if (worldState) {
-    // Offload all rendering to the new Renderer module
     renderer.render(worldState, network.myId, localInput, trackingCenter);
   }
   requestAnimationFrame(renderLoop);

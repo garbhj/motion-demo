@@ -1,0 +1,131 @@
+Backend: Data Structures
+
+server/game/state.go
+- State contains:
+  - Tick int
+  - Players map[string]*Player
+  - Flails map[string]*Flail
+  - Ropes map[string]*Rope
+
+server/game/flail.go
+- Flail struct:
+  - ID string
+  - OwnerID string
+  - X, Y float64
+  - VX, VY float64
+  - A float64 (angle derived from owner delta)
+  - Detached bool (currently always false)
+  - IsAffectedByRope bool
+
+server/game/rope.go
+- ChainSegment struct:
+  - X, Y float64
+  - VX, VY float64
+  - IsAffectedByRope bool
+- Rope struct:
+  - RestLength float64
+  - K float64
+  - Nodes []*ChainSegment (internal nodes only; endpoints are player + flail)
+
+Backend: Tuning Constants (server/game/tuning.go)
+- Deadzone = 0.08
+- AccelPerTick = 1.0
+- BoostMult = 2.5
+- PlayerDampingDiv = 1.1
+- RopeDampingDiv = 1.06
+- MaxSpeed = 12.0
+- RopeRestLength = 140.0
+- RopeK = 0.10
+
+Backend: Spawn Logic (server/room/room.go)
+- On Join:
+  - Player spawned at (100 * idNum, 100 * idNum)
+  - Flail created for owner:
+    - ID = playerID + "_f"
+    - OwnerID = playerID
+    - X,Y = player spawn (co-located)
+    - IsAffectedByRope = true
+  - Rope created for owner:
+    - RestLength = game.RopeRestLength
+    - K = game.RopeK
+    - Nodes = 5 internal nodes (segment count 7 total)
+    - Node positions initialized at player position, with a small upward offset: Y = playerY - i*8
+    - IsAffectedByRope = true
+
+Backend: Simulation Step (server/game/step.go)
+Tick order per Step:
+1) Player movement (for each player)
+   - Input normalized if magnitude > Deadzone
+   - Accel per tick = AccelPerTick (Boost multiplies)
+   - Damping: VX, VY /= PlayerDampingDiv
+   - Clamp speed to MaxSpeed
+   - Integrate position: X += VX, Y += VY
+
+2) Flail tick (for each flail keyed by owner ID)
+   - Compute angle from owner delta:
+     - dx = flail.X - player.X
+     - dy = flail.Y - player.Y
+     - flail.A = atan2(dy, dx)
+   - Damping: VX, VY /= RopeDampingDiv
+   - Integrate: X += VX, Y += VY
+
+3) Rope impulses (for each rope keyed by owner ID)
+   - Build a chain: [player endpoint] + internal nodes + [flail endpoint]
+   - Apply spring force across each adjacent pair
+   - Player endpoint is not affected (bAffected=false for player)
+   - Internal nodes and flail can be affected (bAffected true for internal nodes; flail uses IsAffectedByRope)
+
+4) Integrate rope internal nodes only:
+   - Damping: VX, VY /= RopeDampingDiv
+   - Position: X += VX, Y += VY
+
+Rope impulse formula (applyRopePair):
+- dx, dy = a.pos - b.pos
+- dist = hypot(dx, dy)
+- ext = dist - restLen (bidirectional spring)
+- F = -k * ext * normalize(dx, dy)
+- If bAffected: b.V -= F
+- If aAffected: a.V += F
+
+Quirk kept: Player is NOT affected by rope forces.
+
+Backend: Protocol
+
+server/protocol/server.go
+- State payload includes:
+  - tick
+  - players: [{ id, x, y, a? }]
+  - flails: [{ id, ownerId, x, y, isDetached, a? }]
+
+Room snapshot conversion (server/room/room.go)
+- Players -> PlayerSnapshot (id, x, y)
+- Flails -> FlailSnapshot (id, ownerId, x, y, isDetached, a)
+
+Frontend: Network Layer (client/src/client/NetworkManager.js)
+- Receives state snapshots via websocket
+- Stores last 2 snapshots with timestamps (snapA/snapB)
+- Interpolates positions each render frame (interpDelayMs = 100)
+- Normalizes IDs to strings for players and flails
+- Flails mapping:
+  - id, ownerId, x, y, isDetached, a
+
+Frontend: Renderer (client/src/client/Renderer.js)
+- Expects worldState.flails array
+- For each flail:
+  - owner lookup by ownerId
+  - radius = base 12 + score * 0.05 (score currently default 0)
+  - color = owner color; redder if isDetached
+  - draw circle at (x, y)
+  - draw chain line from owner (x, y) to flail (x, y) if not detached
+- Players drawn as 25px radius circles at (x, y)
+
+Frontend: Main Loop (client/src/client/main.js)
+- networkLoop (40 Hz) sends input to server only
+- renderLoop (requestAnimationFrame) calls network.getLatestWorldState() each frame and renders
+
+Tests (server/game/step_flail_test.go)
+- Rope impulse applies under stretch
+- Neutral at rest length
+- Player not affected by rope
+- Flail angle tracks owner delta
+- Step does not panic if missing flail/rope entries

@@ -8,6 +8,7 @@ type Welcome struct {
 type State struct {
 	Tick    int              `json:"tick"`
 	Players []PlayerSnapshot `json:"players"`
+	Flails  []FlailSnapshot  `json:"flails,omitempty"`
 }
 
 type PlayerSnapshot struct {
@@ -15,6 +16,15 @@ type PlayerSnapshot struct {
 	X  float64 `json:"x"`
 	Y  float64 `json:"y"`
 	A  float64 `json:"a,omitempty"` // optional angle
+}
+
+type FlailSnapshot struct {
+	ID         string  `json:"id"`
+	OwnerID    string  `json:"ownerId"`
+	X          float64 `json:"x"`
+	Y          float64 `json:"y"`
+	IsDetached bool    `json:"isDetached"`
+	A          float64 `json:"a,omitempty"`
 }
 
 type Error struct {

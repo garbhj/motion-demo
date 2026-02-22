@@ -30,6 +30,8 @@ func New() *Room {
 		broadcastEvery: broadcastEvery,
 		state: game.State{
 			Players: make(map[string]*game.Player),
+			Flails:  make(map[string]*game.Flail),
+			Ropes:   make(map[string]*game.Rope),
 		},
 		clients:      make(map[string]Conn),
 		latestInputs: make(map[string]game.Input),
@@ -73,6 +75,35 @@ func (r *Room) handleCommand(cmd any) {
 			spawn := float64(100 * idNum)
 			r.state.Players[playerID] = &game.Player{ID: playerID, X: spawn, Y: spawn}
 		}
+		if _, ok := r.state.Flails[playerID]; !ok {
+			flailID := playerID + "_f"
+			px := r.state.Players[playerID].X
+			py := r.state.Players[playerID].Y
+			r.state.Flails[playerID] = &game.Flail{
+				ID:               flailID,
+				OwnerID:          playerID,
+				X:                px,
+				Y:                py,
+				IsAffectedByRope: true,
+			}
+		}
+		if _, ok := r.state.Ropes[playerID]; !ok {
+			px := r.state.Players[playerID].X
+			py := r.state.Players[playerID].Y
+			nodes := make([]*game.ChainSegment, 0, 5)
+			for i := 1; i <= 5; i++ {
+				nodes = append(nodes, &game.ChainSegment{
+					X:                px,
+					Y:                py - float64(i)*8,
+					IsAffectedByRope: true,
+				})
+			}
+			r.state.Ropes[playerID] = &game.Rope{
+				RestLength: game.RopeRestLength,
+				K:          game.RopeK,
+				Nodes:      nodes,
+			}
+		}
 		c.Reply <- JoinResult{PlayerID: playerID}
 	case Input:
 		if _, ok := r.clients[c.PlayerID]; !ok {
@@ -88,6 +119,8 @@ func (r *Room) handleLeave(playerID string) {
 	c, ok := r.clients[playerID]
 	delete(r.latestInputs, playerID)
 	delete(r.state.Players, playerID)
+	delete(r.state.Flails, playerID)
+	delete(r.state.Ropes, playerID)
 	if ok {
 		r.sendStateTo(c)
 		_ = c.Close()
@@ -102,6 +135,8 @@ func (r *Room) removePlayer(playerID string) {
 	delete(r.clients, playerID)
 	delete(r.latestInputs, playerID)
 	delete(r.state.Players, playerID)
+	delete(r.state.Flails, playerID)
+	delete(r.state.Ropes, playerID)
 }
 
 func (r *Room) broadcastState() {
@@ -135,12 +170,23 @@ func (r *Room) buildSnapshot() protocol.State {
 	snapshot := protocol.State{
 		Tick:    r.state.Tick,
 		Players: make([]protocol.PlayerSnapshot, 0, len(r.state.Players)),
+		Flails:  make([]protocol.FlailSnapshot, 0, len(r.state.Flails)),
 	}
 	for id, p := range r.state.Players {
 		snapshot.Players = append(snapshot.Players, protocol.PlayerSnapshot{
 			ID: id,
 			X:  p.X,
 			Y:  p.Y,
+		})
+	}
+	for _, f := range r.state.Flails {
+		snapshot.Flails = append(snapshot.Flails, protocol.FlailSnapshot{
+			ID:         f.ID,
+			OwnerID:    f.OwnerID,
+			X:          f.X,
+			Y:          f.Y,
+			IsDetached: f.Detached,
+			A:          f.A,
 		})
 	}
 	return snapshot

@@ -1,3 +1,5 @@
+Renderer (draws players + flails each frame): client/src/client/Renderer.js
+
 import { GESTURES } from "./HandHeuristics.js";
 
 // Helpers
@@ -50,6 +52,8 @@ export class GameRenderer {
 
   // Called every frame by main.js
   render(worldState, localPlayerId, localInput, trackingCenter) {
+    console.log("LocalInput" + localInput.x + localInput.y + "\nLocalPlayerId:" + localPlayerId);
+
     const ctx = this.ctx;
     const width = this.canvas.width;
     const height = this.canvas.height;
@@ -205,4 +209,22 @@ export class GameRenderer {
     ctx.arc(handX, handY, 30, 0, Math.PI * 2);
     ctx.stroke();
   }
+}
+
+Main loop (consumes getLatestWorldState): client/src/client/main.js
+
+function networkLoop() {
+  // ...
+  network.sendPlayerInput(moveVector);
+  worldState = network.getLatestWorldState(); 
+}
+
+// --- LOOP 3: Game Rendering (60+ FPS) ---
+function renderLoop() {
+  if (!isPlaying) return;
+
+  if (worldState) {
+    renderer.render(worldState, network.myId, localInput, trackingCenter);
+  }
+  requestAnimationFrame(renderLoop);
 }
