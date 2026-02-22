@@ -21,14 +21,17 @@ export class NetworkManager {
     this.snapB = null;
     this.interpDelayMs = 100;
 
-    this.serverUrl = "wss://2249-2620-101-c040-7e5-7d22-19b6-3d7e-9662.ngrok-free.app/ws";
+    // Server URL: set VITE_WS_URL in Vercel (e.g. wss://your-ngrok-url.ngrok-free.app/ws) or when running ngrok
+    this.serverUrl = (typeof import.meta !== "undefined" && import.meta.env?.VITE_WS_URL) || "ws://localhost:8080/ws";
     const u = new URL(this.serverUrl);
     this.apiBase = (u.protocol === "wss:" ? "https:" : "http:") + "//" + u.host;
+    // Ngrok free tier shows an interstitial; this header skips it for API requests
+    this.apiHeaders = { "ngrok-skip-browser-warning": "true" };
   }
 
   async fetchRooms() {
     try {
-      const res = await fetch(`${this.apiBase}/rooms`);
+      const res = await fetch(`${this.apiBase}/rooms`, { headers: this.apiHeaders });
       if (!res.ok) return [];
       return await res.json();
     } catch (e) {
@@ -39,7 +42,7 @@ export class NetworkManager {
 
   async createRoom() {
     try {
-      const res = await fetch(`${this.apiBase}/rooms`, { method: "POST" });
+      const res = await fetch(`${this.apiBase}/rooms`, { method: "POST", headers: this.apiHeaders });
       if (!res.ok) throw new Error("Create failed");
       const data = await res.json();
       return data?.code ?? null;
