@@ -2,6 +2,7 @@ package room
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"motion/game"
@@ -17,6 +18,9 @@ type Room struct {
 	latestInputs   map[string]game.Input
 	nextID         int
 	quit           chan struct{}
+
+	Code    string             // room code (e.g. "ABC123")
+	OnEmpty func(code string)   // called when last player leaves
 }
 
 func New() *Room {
@@ -30,8 +34,7 @@ func New() *Room {
 		broadcastEvery: broadcastEvery,
 		state: game.State{
 			Players: make(map[string]*game.Player),
-			Flails:  make(map[string]*game.Flail),
-			Ropes:   make(map[string]*game.Rope),
+			Orbs:    make(map[string]*game.Orb),
 		},
 		clients:      make(map[string]Conn),
 		latestInputs: make(map[string]game.Input),
@@ -42,6 +45,11 @@ func New() *Room {
 
 func (r *Room) Stop() {
 	close(r.quit)
+}
+
+// NumPlayers returns the current number of connected clients.
+func (r *Room) NumPlayers() int {
+	return len(r.clients)
 }
 
 func (r *Room) Run() {
@@ -73,35 +81,28 @@ func (r *Room) handleCommand(cmd any) {
 		r.latestInputs[playerID] = game.Input{}
 		if _, ok := r.state.Players[playerID]; !ok {
 			spawn := float64(100 * idNum)
-			r.state.Players[playerID] = &game.Player{ID: playerID, X: spawn, Y: spawn}
+			name := c.Name
+			if name == "" {
+				name = fmt.Sprintf("Player %d", idNum)
+			}
+			r.state.Players[playerID] = &game.Player{ID: playerID, Name: name, X: spawn, Y: spawn}
 		}
-		if _, ok := r.state.Flails[playerID]; !ok {
-			flailID := playerID + "_f"
+		if _, ok := r.state.Orbs[playerID]; !ok {
 			px := r.state.Players[playerID].X
 			py := r.state.Players[playerID].Y
-			r.state.Flails[playerID] = &game.Flail{
-				ID:               flailID,
-				OwnerID:          playerID,
-				X:                px,
-				Y:                py,
-				IsAffectedByRope: true,
-			}
-		}
-		if _, ok := r.state.Ropes[playerID]; !ok {
-			px := r.state.Players[playerID].X
-			py := r.state.Players[playerID].Y
-			nodes := make([]*game.ChainSegment, 0, 5)
-			for i := 1; i <= 5; i++ {
-				nodes = append(nodes, &game.ChainSegment{
-					X:                px,
-					Y:                py - float64(i)*8,
-					IsAffectedByRope: true,
-				})
-			}
-			r.state.Ropes[playerID] = &game.Rope{
-				RestLength: game.RopeRestLength,
-				K:          game.RopeK,
-				Nodes:      nodes,
+			angle := 0.0
+			ox := px + math.Cos(angle)*game.OrbOrbitRadius
+			oy := py + math.Sin(angle)*game.OrbOrbitRadius
+			r.state.Orbs[playerID] = &game.Orb{
+				ID:            playerID + "_o",
+				OwnerID:       playerID,
+				X:             ox,
+				Y:             oy,
+				Angle:         angle,
+				Size:          game.OrbBaseSize,
+				Mode:          game.OrbOrbit,
+				ShotTicksLeft: 0,
+				CooldownTicks: 0,
 			}
 		}
 		c.Reply <- JoinResult{PlayerID: playerID}
@@ -119,12 +120,14 @@ func (r *Room) handleLeave(playerID string) {
 	c, ok := r.clients[playerID]
 	delete(r.latestInputs, playerID)
 	delete(r.state.Players, playerID)
-	delete(r.state.Flails, playerID)
-	delete(r.state.Ropes, playerID)
+	delete(r.state.Orbs, playerID)
 	if ok {
 		r.sendStateTo(c)
 		_ = c.Close()
 		delete(r.clients, playerID)
+	}
+	if len(r.clients) == 0 && r.OnEmpty != nil && r.Code != "" {
+		r.OnEmpty(r.Code)
 	}
 }
 
@@ -135,8 +138,7 @@ func (r *Room) removePlayer(playerID string) {
 	delete(r.clients, playerID)
 	delete(r.latestInputs, playerID)
 	delete(r.state.Players, playerID)
-	delete(r.state.Flails, playerID)
-	delete(r.state.Ropes, playerID)
+	delete(r.state.Orbs, playerID)
 }
 
 func (r *Room) broadcastState() {
@@ -168,25 +170,31 @@ func (r *Room) sendStateTo(c Conn) {
 
 func (r *Room) buildSnapshot() protocol.State {
 	snapshot := protocol.State{
-		Tick:    r.state.Tick,
-		Players: make([]protocol.PlayerSnapshot, 0, len(r.state.Players)),
-		Flails:  make([]protocol.FlailSnapshot, 0, len(r.state.Flails)),
+		Tick:       r.state.Tick,
+		Players:    make([]protocol.PlayerSnapshot, 0, len(r.state.Players)),
+		Orbs:       make([]protocol.OrbSnapshot, 0, len(r.state.Orbs)),
+		Eliminated: make([]protocol.EliminatedSnapshot, 0, len(r.state.Eliminated)),
 	}
 	for id, p := range r.state.Players {
 		snapshot.Players = append(snapshot.Players, protocol.PlayerSnapshot{
-			ID: id,
-			X:  p.X,
-			Y:  p.Y,
+			ID:   id,
+			Name: p.Name,
+			X:    p.X,
+			Y:    p.Y,
 		})
 	}
-	for _, f := range r.state.Flails {
-		snapshot.Flails = append(snapshot.Flails, protocol.FlailSnapshot{
-			ID:         f.ID,
-			OwnerID:    f.OwnerID,
-			X:          f.X,
-			Y:          f.Y,
-			IsDetached: f.Detached,
-			A:          f.A,
+	for _, e := range r.state.Eliminated {
+		snapshot.Eliminated = append(snapshot.Eliminated, protocol.EliminatedSnapshot{ID: e.ID, Name: e.Name})
+	}
+	for _, o := range r.state.Orbs {
+		snapshot.Orbs = append(snapshot.Orbs, protocol.OrbSnapshot{
+			ID:      o.ID,
+			OwnerID: o.OwnerID,
+			X:       o.X,
+			Y:       o.Y,
+			Size:    o.Size,
+			A:       o.Angle,
+			Mode:    uint8(o.Mode),
 		})
 	}
 	return snapshot

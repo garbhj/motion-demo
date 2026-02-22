@@ -13,8 +13,23 @@ const pipContainer = document.getElementById("pip_container");
 const mainMenu = document.getElementById("menu_screen");
 const inGameUi = document.getElementById("game_ui_layer");
 const enableCameraBtn = document.getElementById("enableCameraBtn");
-const playBtn = document.getElementById("startGameBtn");
 const playerNameInput = document.getElementById("playerName");
+const roomListEl = document.getElementById("roomList");
+const roomListEmptyEl = document.getElementById("roomListEmpty");
+const refreshRoomsBtn = document.getElementById("refreshRoomsBtn");
+const createLobbyBtn = document.getElementById("createLobbyBtn");
+
+const infoBtn = document.getElementById("infoBtn");
+const infoModal = document.getElementById("infoModal");
+const closeInfoBtn = document.getElementById("closeInfoBtn");
+
+if (infoBtn && infoModal && closeInfoBtn) {
+  infoBtn.addEventListener("click", () => infoModal.classList.remove("hidden"));
+  closeInfoBtn.addEventListener("click", () => infoModal.classList.add("hidden"));
+  infoModal.addEventListener("click", (e) => {
+    if (e.target === infoModal) infoModal.classList.add("hidden");
+  });
+}
 
 // Modules
 const tracker = new HandTracker();
@@ -33,10 +48,12 @@ let networkInterval = null;
 let renderFrameId = null;  // 
 
 // Controls
-document.getElementById("exitBtn").addEventListener("click", exitGame);
+const exitBtn = document.getElementById("exitBtn");
+if (exitBtn) exitBtn.addEventListener("click", exitGame);
 
 // To recenter joystick, click button and or key "c"
-document.getElementById("recenterBtn").addEventListener("click", recenterJoystick);
+const recenterBtn = document.getElementById("recenterBtn");
+if (recenterBtn) recenterBtn.addEventListener("click", recenterJoystick);
 window.addEventListener("keydown", (e) => {
   if (e.key.toLowerCase() === 'c') recenterJoystick();
 });
@@ -55,20 +72,37 @@ window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
 async function boot() {
-  enableCameraBtn.innerText = "Loading AI...";
+  if (!enableCameraBtn) return;
   enableCameraBtn.disabled = true;
-  await tracker.initialize();
-  tracker.setCanvas(debugCtx);
-  
-  enableCameraBtn.innerText = "Start Camera";
+  enableCameraBtn.innerHTML = `<span class="btn-text">Loading AI...</span><span class="btn-sub">Please wait</span>`;
+  try {
+    await tracker.initialize();
+    tracker.setCanvas(debugCtx);
+  } catch (err) {
+    console.error("Tracker init failed:", err);
+    enableCameraBtn.innerHTML = `<span class="btn-text">Init failed</span><span class="btn-sub">Check console</span>`;
+    enableCameraBtn.disabled = false;
+    return;
+  }
+  enableCameraBtn.innerHTML = `<span class="btn-text">Initialize Camera</span><span class="btn-sub">Required to play</span>`;
   enableCameraBtn.disabled = false;
 
   enableCameraBtn.addEventListener("click", toggleCamera);
-  playBtn.addEventListener("click", startGame);
+  if (refreshRoomsBtn) {
+    refreshRoomsBtn.addEventListener("click", refreshRoomList);
+  }
+  if (createLobbyBtn) {
+    createLobbyBtn.disabled = true;
+    createLobbyBtn.addEventListener("click", onCreateLobby);
+  }
+  const togglePipBtn = document.getElementById("togglePipBtn");
+  if (togglePipBtn) {
+    togglePipBtn.addEventListener("click", () => pipContainer.classList.toggle("minimized"));
+  }
 
-  document.getElementById("togglePipBtn").addEventListener("click", () => {
-    pipContainer.classList.toggle("minimized");
-  });
+  if (roomListEl && roomListEmptyEl) {
+    refreshRoomList();
+  }
 }
 
 // STATE 1: CAMERA START/STOP
@@ -82,27 +116,27 @@ async function toggleCamera() {
 
 async function startCamera() {
   enableCameraBtn.disabled = true;
-  enableCameraBtn.innerText = "Camera Starting...";
-  
+  enableCameraBtn.innerHTML = `<span class="btn-text">Starting...</span><span class="btn-sub">Please wait</span>`;
+
   const stream = await navigator.mediaDevices.getUserMedia({ video: true });
   video.srcObject = stream;
-  
-  // Wait for video to start playing before kicking off loops
+
   video.addEventListener("loadeddata", () => {
     debugCanvas.width = video.videoWidth;
     debugCanvas.height = video.videoHeight;
     isCameraActive = true;
 
     pipContainer.classList.remove("hidden");
-    
-    enableCameraBtn.innerText = "Disable Camera";
+
+    enableCameraBtn.innerHTML = `<span class="btn-text">Camera Active</span><span class="btn-sub">Click to Disable</span>`;
+    enableCameraBtn.classList.add("active-state");
     enableCameraBtn.disabled = false;
-    playBtn.disabled = false;
-    trackCameraLoop(); // Input tied to camera frame rate
+    if (createLobbyBtn) createLobbyBtn.disabled = false;
+    trackCameraLoop();
   });
 }
 
-async function stopCamera()  {
+async function stopCamera() {
   isCameraActive = false;
   if (video.srcObject) {
     video.srcObject.getTracks().forEach(track => track.stop());
@@ -110,29 +144,77 @@ async function stopCamera()  {
   }
 
   enableCameraBtn.disabled = false;
-  enableCameraBtn.innerText = "Start Camera";
+  enableCameraBtn.innerHTML = `<span class="btn-text">Initialize Camera</span><span class="btn-sub">Required to play</span>`;
+  enableCameraBtn.classList.remove("active-state");
+  if (createLobbyBtn) createLobbyBtn.disabled = true;
 
   pipContainer.classList.add("hidden");
-  debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);  // Wipes the PiP
-
-  playBtn.disabled = true;
+  debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
 }
 
-// STATE 2: GAME START/STOP
-function startGame() {
+async function refreshRoomList() {
+  if (!roomListEl || !roomListEmptyEl) return;
+  const rooms = await network.fetchRooms();
+  roomListEl.innerHTML = "";
+  if (rooms.length === 0) {
+    roomListEmptyEl.classList.remove("hidden");
+  } else {
+    roomListEmptyEl.classList.add("hidden");
+    for (const room of rooms) {
+      const li = document.createElement("li");
+      li.className = "room-item";
+      li.innerHTML = `<span class="room-code">${escapeHtml(room.code)}</span><span class="room-players">${room.players} player${room.players !== 1 ? "s" : ""}</span>`;
+      li.dataset.code = room.code;
+      li.addEventListener("click", () => {
+        if (!isCameraActive) {
+          alert("Please initialize the camera first to play.");
+          return;
+        }
+        joinRoom(room.code);
+      });
+      roomListEl.appendChild(li);
+    }
+  }
+}
+
+function escapeHtml(s) {
+  const div = document.createElement("div");
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+async function onCreateLobby() {
+  if (!isCameraActive) {
+    alert("Please initialize the camera first to play.");
+    return;
+  }
+  createLobbyBtn.disabled = true;
+  createLobbyBtn.textContent = "Creating…";
+  const code = await network.createRoom();
+  createLobbyBtn.disabled = false;
+  createLobbyBtn.textContent = "+ Create lobby";
+  if (code) {
+    await refreshRoomList();
+    joinRoom(code);
+  } else {
+    alert("Could not create lobby. Is the server running?");
+  }
+}
+
+function joinRoom(code) {
+  if (!isCameraActive) {
+    alert("Please initialize the camera first to play.");
+    return;
+  }
   const name = playerNameInput.value.trim() || "Anonymous";
-  
-  console.log("JOINING GAME!!");
-  // Tell network we're joining
-  network.joinGame(name);
+  if (!network.joinGame(name, code)) return;
 
   mainMenu.classList.add("hidden");
   inGameUi.classList.remove("hidden");
   isPlaying = true;
+  trackingCenter = { x: 0.5, y: 0.5 };
 
-  trackingCenter = { x: 0.5, y: 0.5 };  // Reset the tracking center to middle upon starting
-
-  networkInterval = setInterval(networkLoop, 1000 / 40); // 40 FPS
+  networkInterval = setInterval(networkLoop, 1000 / 40);
   renderFrameId = requestAnimationFrame(renderLoop);
 }
 
@@ -147,7 +229,8 @@ function exitGame() {
   // Reset UI
   mainMenu.classList.remove("hidden");
   inGameUi.classList.add("hidden");
-  
+  refreshRoomList();
+
   // Clear *game* canvas
   const ctx = gameCanvas.getContext("2d");
   ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
@@ -199,15 +282,16 @@ function networkLoop() {
   const deadzone = 0.02; // Proportion of screen
   const maxRadius = 0.25; // Max 
 
-  let moveVector = { ax: 0, ay: 0, boost: false };
+  let moveVector = { ax: 0, ay: 0, boost: false, shoot: false };
 
   if (distance > deadzone) {
-    // Cap at maxRadius and normalize to -1.0 to 1.0
     const clampedDist = Math.min(distance, maxRadius);
     moveVector.ax = (dx / distance) * (clampedDist / maxRadius);
     moveVector.ay = (dy / distance) * (clampedDist / maxRadius);
   }
-  moveVector.boost = localInput.gesture === GESTURES.POINT;
+  // Pinch = sprint, Fist = orb hit, Point = neither (no glitch)
+  moveVector.boost = localInput.gesture === GESTURES.PINCH;
+  moveVector.shoot = localInput.gesture === GESTURES.CLOSED;
 
   // Send Analog Vector to server
   network.sendPlayerInput(moveVector);

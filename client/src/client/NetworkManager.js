@@ -28,21 +28,53 @@ export class NetworkManager {
       const proto = window.location.protocol === "https:" ? "wss" : "ws";
       this.serverUrl = `${proto}://localhost:8080/ws`;
     }
+    const u = new URL(this.serverUrl);
+    this.apiBase = (u.protocol === "wss:" ? "https:" : "http:") + "//" + u.host;
+  }
+
+  async fetchRooms() {
+    try {
+      const res = await fetch(`${this.apiBase}/rooms`);
+      if (!res.ok) return [];
+      return await res.json();
+    } catch (e) {
+      console.warn("fetch rooms failed:", e);
+      return [];
+    }
+  }
+
+  async createRoom() {
+    try {
+      const res = await fetch(`${this.apiBase}/rooms`, { method: "POST" });
+      if (!res.ok) throw new Error("Create failed");
+      const data = await res.json();
+      return data?.code ?? null;
+    } catch (e) {
+      console.warn("create room failed:", e);
+      return null;
+    }
   }
 
   encode(t, p) {
     return JSON.stringify({ t, p });
   }
 
-  joinGame(name) {
+  joinGame(name, roomCode) {
+    if (!roomCode || !roomCode.trim()) {
+      console.warn("Room code required");
+      return false;
+    }
+    const code = roomCode.trim().toUpperCase();
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       if (this.ws.readyState === WebSocket.OPEN) {
         this.ws.send(this.encode("hello", { v: 1, name }));
       }
-      return;
+      return true;
     }
 
-    this.ws = new WebSocket(this.serverUrl);
+    const sep = this.serverUrl.includes("?") ? "&" : "?";
+    const url = `${this.serverUrl}${sep}room=${encodeURIComponent(code)}`;
+    this.ws = new WebSocket(url);
 
     this.ws.addEventListener("open", () => {
       this.ws.send(this.encode("hello", { v: 1, name }));
@@ -74,9 +106,9 @@ export class NetworkManager {
             console.log(
               "state players:",
               env.p?.players?.length,
-              "flails:",
-              env.p?.flails?.length,
-              env.p?.flails?.[0]
+              "orbs:",
+              env.p?.orbs?.length,
+              env.p?.orbs?.[0]
             );
           }
           break;
@@ -95,6 +127,7 @@ export class NetworkManager {
       this.stopInputLoop();
       console.warn("WebSocket error:", err);
     });
+    return true;
   }
 
   startInputLoop() {
@@ -116,7 +149,8 @@ export class NetworkManager {
     this.pendingInput = {
       ax: Math.max(-1, Math.min(1, inputVector.ax)),
       ay: Math.max(-1, Math.min(1, inputVector.ay)),
-      boost: !!inputVector.boost
+      boost: !!inputVector.boost,
+      shoot: !!inputVector.shoot
     };
   }
 
@@ -128,7 +162,8 @@ export class NetworkManager {
         mapConfig: this.mapConfig,
         obstacles: this.obstacles,
         players: [],
-        flails: [],
+        orbs: [],
+        eliminated: [],
         tick: 0,
         myId: this.myId ? String(this.myId) : null
       };
@@ -150,13 +185,15 @@ export class NetworkManager {
 
   buildWorldFromSnapshot(st) {
     const players = this.normalizePlayers(st?.players);
-    const flails = this.normalizeFlails(st?.flails);
+    const orbs = this.normalizeOrbs(st?.orbs);
+    const eliminated = (st?.eliminated || []).map(e => ({ id: String(e.id), name: e.name || `Player ${e.id}` }));
 
     return {
       mapConfig: this.mapConfig,
       obstacles: this.obstacles,
       players: Object.values(players),
-      flails: Object.values(flails),
+      orbs: Object.values(orbs),
+      eliminated,
       tick: st?.tick ?? 0,
       myId: this.myId ? String(this.myId) : null
     };
@@ -165,17 +202,20 @@ export class NetworkManager {
   interpolateWorld(aState, bState, alpha) {
     const aPlayers = this.normalizePlayers(aState?.players);
     const bPlayers = this.normalizePlayers(bState?.players);
-    const aFlails = this.normalizeFlails(aState?.flails);
-    const bFlails = this.normalizeFlails(bState?.flails);
+    const aOrbs = this.normalizeOrbs(aState?.orbs);
+    const bOrbs = this.normalizeOrbs(bState?.orbs);
 
     const players = this.mergeAndInterpolate(aPlayers, bPlayers, alpha);
-    const flails = this.mergeAndInterpolate(aFlails, bFlails, alpha, true);
+    const orbs = this.mergeAndInterpolate(aOrbs, bOrbs, alpha, true);
+
+    const eliminated = (bState?.eliminated || []).map(e => ({ id: String(e.id), name: e.name || `Player ${e.id}` }));
 
     return {
       mapConfig: this.mapConfig,
       obstacles: this.obstacles,
       players,
-      flails,
+      orbs,
+      eliminated,
       tick: bState?.tick ?? 0,
       myId: this.myId ? String(this.myId) : null
     };
@@ -200,24 +240,25 @@ export class NetworkManager {
     return out;
   }
 
-  normalizeFlails(flails) {
+  normalizeOrbs(orbs) {
     const out = {};
-    if (!flails) return out;
-    for (const f of flails) {
-      const id = String(f.id);
+    if (!orbs) return out;
+    for (const o of orbs) {
+      const id = String(o.id);
       out[id] = {
         id,
-        ownerId: String(f.ownerId),
-        x: f.x,
-        y: f.y,
-        isDetached: !!f.isDetached,
-        a: f.a ?? 0
+        ownerId: String(o.ownerId),
+        x: o.x,
+        y: o.y,
+        size: o.size ?? 1,
+        a: o.a ?? 0,
+        mode: o.mode ?? 0
       };
     }
     return out;
   }
 
-  mergeAndInterpolate(aMap, bMap, alpha, isFlail = false) {
+  mergeAndInterpolate(aMap, bMap, alpha, isOrb = false) {
     const out = [];
     const ids = new Set([...Object.keys(aMap), ...Object.keys(bMap)]);
     for (const id of ids) {
@@ -233,14 +274,15 @@ export class NetworkManager {
       }
       const x = this.lerp(a.x, b.x, alpha);
       const y = this.lerp(a.y, b.y, alpha);
-      if (isFlail) {
+      if (isOrb) {
         out.push({
           id,
           ownerId: b.ownerId ?? a.ownerId,
           x,
           y,
-          isDetached: b.isDetached ?? a.isDetached,
-          a: b.a ?? a.a ?? 0
+          size: b.size ?? a.size ?? 1,
+          a: b.a ?? a.a ?? 0,
+          mode: b.mode ?? a.mode ?? 0
         });
       } else {
         out.push({

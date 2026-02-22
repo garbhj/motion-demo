@@ -6,25 +6,33 @@ type Welcome struct {
 }
 
 type State struct {
-	Tick    int              `json:"tick"`
-	Players []PlayerSnapshot `json:"players"`
-	Flails  []FlailSnapshot  `json:"flails,omitempty"`
+	Tick       int                 `json:"tick"`
+	Players    []PlayerSnapshot    `json:"players"`
+	Orbs       []OrbSnapshot       `json:"orbs,omitempty"`
+	Eliminated []EliminatedSnapshot `json:"eliminated,omitempty"`
 }
 
 type PlayerSnapshot struct {
-	ID string  `json:"id"`
-	X  float64 `json:"x"`
-	Y  float64 `json:"y"`
-	A  float64 `json:"a,omitempty"` // optional angle
+	ID   string  `json:"id"`
+	Name string  `json:"name,omitempty"`
+	X    float64 `json:"x"`
+	Y    float64 `json:"y"`
+	A    float64 `json:"a,omitempty"`
 }
 
-type FlailSnapshot struct {
-	ID         string  `json:"id"`
-	OwnerID    string  `json:"ownerId"`
-	X          float64 `json:"x"`
-	Y          float64 `json:"y"`
-	IsDetached bool    `json:"isDetached"`
-	A          float64 `json:"a,omitempty"`
+type EliminatedSnapshot struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type OrbSnapshot struct {
+	ID      string  `json:"id"`
+	OwnerID string  `json:"ownerId"`
+	X       float64 `json:"x"`
+	Y       float64 `json:"y"`
+	Size    float64 `json:"size"`
+	A       float64 `json:"a,omitempty"`
+	Mode    uint8   `json:"mode"`
 }
 
 type Error struct {

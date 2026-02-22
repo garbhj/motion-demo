@@ -37,114 +37,132 @@ func Step(s *State, inputs map[string]Input) {
 
 		p.X += p.VX
 		p.Y += p.VY
+
+		// Keep player inside map bounds
+		if p.X < PlayerRadius {
+			p.X = PlayerRadius
+			p.VX = 0
+		}
+		if p.X > MapWidth-PlayerRadius {
+			p.X = MapWidth - PlayerRadius
+			p.VX = 0
+		}
+		if p.Y < PlayerRadius {
+			p.Y = PlayerRadius
+			p.VY = 0
+		}
+		if p.Y > MapHeight-PlayerRadius {
+			p.Y = MapHeight - PlayerRadius
+			p.VY = 0
+		}
 	}
 
-	// Flail tick: update angle + integrate with damping
-	for ownerID, flail := range s.Flails {
+	// Orb tick: check for orb hitting other players (elimination)
+	var toEliminate []string
+	for ownerID, orb := range s.Orbs {
+		if orb.Mode != OrbShot {
+			continue
+		}
+		_, ownerOk := s.Players[ownerID]
+		if !ownerOk {
+			continue
+		}
+		for otherID, other := range s.Players {
+			if otherID == ownerID {
+				continue
+			}
+			dx := orb.X - other.X
+			dy := orb.Y - other.Y
+			dist := math.Hypot(dx, dy)
+			if dist < PlayerRadius+OrbHitRadius {
+				toEliminate = append(toEliminate, otherID)
+			}
+		}
+	}
+	for _, id := range toEliminate {
+		if p, ok := s.Players[id]; ok {
+			s.Eliminated = append(s.Eliminated, EliminatedEntry{ID: id, Name: p.Name})
+		}
+		delete(s.Players, id)
+		delete(s.Orbs, id)
+	}
+
+	// Orb tick
+	for ownerID, orb := range s.Orbs {
 		player, ok := s.Players[ownerID]
-		if !ok || flail == nil || player == nil {
-			continue
-		}
-		dx := flail.X - player.X
-		dy := flail.Y - player.Y
-		flail.A = math.Atan2(dy, dx)
-
-		flail.VX /= RopeDampingDiv
-		flail.VY /= RopeDampingDiv
-
-		flail.X += flail.VX
-		flail.Y += flail.VY
-	}
-
-	// Rope impulses + integrate internal nodes
-	for ownerID, rope := range s.Ropes {
-		if rope == nil || len(rope.Nodes) == 0 {
-			continue
-		}
-		player, okPlayer := s.Players[ownerID]
-		flail, okFlail := s.Flails[ownerID]
-		if !okPlayer || !okFlail || player == nil || flail == nil {
+		if !ok || orb == nil || player == nil {
 			continue
 		}
 
-		// Build chain: player endpoint -> internal nodes -> flail endpoint
-		chain := make([]ropeBody, 0, len(rope.Nodes)+2)
-		chain = append(chain, playerBody{X: player.X, Y: player.Y})
-		for _, n := range rope.Nodes {
-			chain = append(chain, n)
+		inp, okInp := inputs[ownerID]
+		if !okInp {
+			inp = Input{}
 		}
-		chain = append(chain, flail)
+		shootPressed := inpIsShootPressed(player, inp)
 
-		// Apply impulses along adjacent pairs (player not affected)
-		for i := 0; i < len(chain)-1; i++ {
-			b := chain[i]
-			a := chain[i+1]
-			bAffected := false
-			aAffected := true
-			if i > 0 {
-				bAffected = true
+		switch orb.Mode {
+		case OrbOrbit:
+			orb.Angle += OrbAngularSpeedPerTick
+			orb.X = player.X + math.Cos(orb.Angle)*OrbOrbitRadius
+			orb.Y = player.Y + math.Sin(orb.Angle)*OrbOrbitRadius
+			orb.VX = 0
+			orb.VY = 0
+
+			if orb.CooldownTicks > 0 {
+				orb.CooldownTicks--
 			}
-			if i == len(chain)-2 {
-				if f, ok := a.(*Flail); ok {
-					aAffected = f.IsAffectedByRope
-				}
+			if shootPressed && orb.CooldownTicks == 0 {
+				// Shoot in the direction the orb was orbiting (tangent), like releasing from a sling
+				tangentX := -math.Sin(orb.Angle)
+				tangentY := math.Cos(orb.Angle)
+				orb.VX = tangentX * OrbShotSpeed
+				orb.VY = tangentY * OrbShotSpeed
+				orb.Mode = OrbShot
+				orb.ShotTicksLeft = OrbShotDurationTicks
+				orb.CooldownTicks = OrbCooldownTicks
 			}
-			applyRopePair(b, bAffected, a, aAffected, rope.RestLength, rope.K)
+
+		case OrbShot:
+			orb.VX /= OrbDampingDiv
+			orb.VY /= OrbDampingDiv
+			orb.X += orb.VX
+			orb.Y += orb.VY
+			orb.ShotTicksLeft--
+
+			dx := orb.X - player.X
+			dy := orb.Y - player.Y
+			dist := math.Hypot(dx, dy)
+			if orb.ShotTicksLeft <= 0 || dist > OrbMaxShotDistance {
+				orb.Mode = OrbReturn
+			}
+
+		case OrbReturn:
+			// Keep orbit angle advancing so when we snap back we're in sync
+			orb.Angle += OrbAngularSpeedPerTick
+			orbitX := player.X + math.Cos(orb.Angle)*OrbOrbitRadius
+			orbitY := player.Y + math.Sin(orb.Angle)*OrbOrbitRadius
+
+			// Pull orb straight back to orbit circle (fixed radius), no wire
+			orb.X += (orbitX - orb.X) * 0.18
+			orb.Y += (orbitY - orb.Y) * 0.18
+
+			dist := math.Hypot(orb.X-player.X, orb.Y-player.Y)
+			if math.Abs(dist-OrbOrbitRadius) < OrbReturnSnapDist {
+				orb.Mode = OrbOrbit
+				orb.X = orbitX
+				orb.Y = orbitY
+				orb.VX = 0
+				orb.VY = 0
+			}
+			if orb.CooldownTicks > 0 {
+				orb.CooldownTicks--
+			}
 		}
-
-		// integrate internal nodes only
-		for _, n := range rope.Nodes {
-			n.VX /= RopeDampingDiv
-			n.VY /= RopeDampingDiv
-			n.X += n.VX
-			n.Y += n.VY
-		}
 	}
 }
 
-type ropeBody interface {
-	Pos() (float64, float64)
-	Vel() (float64, float64)
-	SetVel(vx, vy float64)
-}
-
-type playerBody struct {
-	X, Y float64
-}
-
-func (p playerBody) Pos() (float64, float64) { return p.X, p.Y }
-func (p playerBody) Vel() (float64, float64) { return 0, 0 }
-func (p playerBody) SetVel(vx, vy float64)   {}
-
-func (c *ChainSegment) Pos() (float64, float64) { return c.X, c.Y }
-func (c *ChainSegment) Vel() (float64, float64) { return c.VX, c.VY }
-func (c *ChainSegment) SetVel(vx, vy float64)   { c.VX, c.VY = vx, vy }
-
-func (f *Flail) Pos() (float64, float64) { return f.X, f.Y }
-func (f *Flail) Vel() (float64, float64) { return f.VX, f.VY }
-func (f *Flail) SetVel(vx, vy float64)   { f.VX, f.VY = vx, vy }
-
-func applyRopePair(b ropeBody, bAffected bool, a ropeBody, aAffected bool, restLen, k float64) {
-	bx, by := b.Pos()
-	ax, ay := a.Pos()
-	dx := ax - bx
-	dy := ay - by
-	dist := math.Hypot(dx, dy)
-	if dist == 0 {
-		return
-	}
-	ext := dist - restLen
-	nx := dx / dist
-	ny := dy / dist
-	fx := -k * ext * nx
-	fy := -k * ext * ny
-
-	if bAffected {
-		bvx, bvy := b.Vel()
-		b.SetVel(bvx-fx, bvy-fy)
-	}
-	if aAffected {
-		avx, avy := a.Vel()
-		a.SetVel(avx+fx, avy+fy)
-	}
+func inpIsShootPressed(p *Player, inp Input) bool {
+	shootPressed := inp.Shoot && !p.PrevPinch
+	p.PrevPinch = inp.Shoot
+	return shootPressed
 }

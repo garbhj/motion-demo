@@ -23,13 +23,6 @@ function getColorForId(id) {
   const hue = Math.abs((numericId * 137.508) % 360);
   return `hsl(${hue}, 70%, 60%)`;
 }
-// The shared math function (Server should use this exact logic for collisions)
-function getFlailRadius(score) {
-  const baseRadius = 12;
-  const growthFactor = 0.05; // How much it grows per point
-  return baseRadius + (score * growthFactor);
-}
-
 // Brighten
 function ColorLuminance(hsl, factor) {
   const parts = hsl.match(/[\d.]+/g);
@@ -88,36 +81,26 @@ export class GameRenderer {
       ctx.strokeRect(obs.x, obs.y, obs.width, obs.height);
     });
 
-    // 5. Draw Flails (Behind players)
-    worldState.flails.forEach(f => {
-      // Find the owner to get their score and ID
-      const owner = worldState.players.find(p => p.id === f.ownerId);
-      const score = owner ? owner.score : 0;
-      const radius = getFlailRadius(score);
+    // 5. Draw Orbs (Behind players)
+    (worldState.orbs || []).forEach(o => {
+      const owner = worldState.players.find(p => p.id === o.ownerId);
       const playerColor = owner ? getColorForId(owner.id) : "#aaa";
+      const radius = 10 + (o.size || 1) * 8;
+
+      let orbColor = playerColor;
+      if (o.mode === 1) {
+        orbColor = ColorLuminance(playerColor, 0.3);
+      } else if (o.mode === 2) {
+        orbColor = ColorLuminance(playerColor, -0.1);
+      }
       
-      // If detached, color it red to indicate danger. Otherwise, match player color.
-      ctx.fillStyle = f.isDetached ? ColorLuminance(playerColor, 0.3) : playerColor;
-      
+      ctx.fillStyle = orbColor;
       ctx.beginPath();
-      ctx.arc(f.x, f.y, radius, 0, Math.PI * 2);
+      ctx.arc(o.x, o.y, radius, 0, Math.PI * 2);
       ctx.fill();
       ctx.lineWidth = 2;
       ctx.strokeStyle = "rgba(0,0,0,0.5)";
       ctx.stroke();
-
-      // Draw chain
-      if (!f.isDetached && owner) {
-        const owner = worldState.players.find(p => p.id === f.ownerId);
-        if (owner) {
-          ctx.strokeStyle = "#666";
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          ctx.moveTo(owner.x, owner.y);
-          ctx.lineTo(f.x, f.y);
-          ctx.stroke();
-        }
-      }
     });
 
     // 6. Draw Players
@@ -142,10 +125,61 @@ export class GameRenderer {
     });
 
     // --- RESTORE CAMERA ---
-    ctx.restore(); 
+    ctx.restore();
 
-    // 7. Draw HUD (Heads Up Display - Drawn fixed to the screen)
+    // 7. Leaderboard (top of screen)
+    this.drawLeaderboard(worldState.players, worldState.eliminated || [], localPlayerId, width);
+
+    // 8. Draw HUD (Heads Up Display - Drawn fixed to the screen)
     this.drawJoystickHUD(localInput, trackingCenter, width, height);
+  }
+
+  drawLeaderboard(players, eliminated, localPlayerId, width) {
+    const ctx = this.ctx;
+    const padding = 12;
+    const rowHeight = 22;
+    const fontSize = 14;
+    ctx.font = `bold ${fontSize}px sans-serif`;
+    ctx.textAlign = "left";
+
+    const entries = [
+      ...players.map(p => ({ id: p.id, name: p.name || `Player ${p.id}`, alive: true })),
+      ...eliminated.map(e => ({ id: e.id, name: e.name || `Player ${e.id}`, alive: false }))
+    ];
+    if (entries.length === 0) return;
+
+    const boxWidth = Math.min(320, width - 40);
+    const titleRow = rowHeight;
+    const boxHeight = padding * 2 + titleRow + entries.length * rowHeight;
+    const x = (width - boxWidth) / 2;
+    const y = 16;
+
+    ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(x, y, boxWidth, boxHeight, 8);
+    } else {
+      ctx.rect(x, y, boxWidth, boxHeight);
+    }
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+    ctx.fillText("Leaderboard", x + padding, y + padding + fontSize);
+
+    entries.forEach((entry, i) => {
+      const yy = y + padding + titleRow + i * rowHeight;
+      const isMe = entry.id === localPlayerId;
+      if (entry.alive) {
+        ctx.fillStyle = isMe ? "#00bcd4" : "rgba(255, 255, 255, 0.95)";
+      } else {
+        ctx.fillStyle = isMe ? "rgba(255, 100, 100, 0.9)" : "rgba(160, 160, 160, 0.9)";
+      }
+      const label = entry.alive ? entry.name : `${entry.name} (out)`;
+      ctx.fillText(label, x + padding, yy + fontSize - 2);
+    });
   }
 
   drawMap(config) {

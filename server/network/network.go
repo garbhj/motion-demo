@@ -1,6 +1,7 @@
 package network
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 	"sync"
@@ -31,9 +32,15 @@ func (w *WSConn) Close() error {
 	return w.c.Close()
 }
 
-var globalRoom *room.Room
+var manager *room.Manager
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
+	roomCode := r.URL.Query().Get("room")
+	if roomCode == "" {
+		http.Error(w, "missing room code", http.StatusBadRequest)
+		return
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println("upgrade:", err)
@@ -41,8 +48,8 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	if globalRoom == nil {
-		log.Println("room not initialized")
+	gameRoom := manager.GetOrCreateRoom(roomCode)
+	if gameRoom == nil {
 		return
 	}
 
@@ -56,7 +63,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Println("read:", err)
 			if joined {
-				globalRoom.Inbox <- room.Leave{PlayerID: playerID}
+				gameRoom.Inbox <- room.Leave{PlayerID: playerID}
 			}
 			return
 		}
@@ -82,7 +89,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 
 			reply := make(chan room.JoinResult, 1)
-			globalRoom.Inbox <- room.Join{Conn: ws, Name: hello.Name, Reply: reply}
+			gameRoom.Inbox <- room.Join{Conn: ws, Name: hello.Name, Reply: reply}
 			res := <-reply
 			playerID = res.PlayerID
 			joined = true
@@ -115,10 +122,11 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					Ax:    float64(inp.Ax),
 					Ay:    float64(inp.Ay),
 					Boost: inp.Boost,
+					Shoot: inp.Shoot,
 				},
 			}
 			select {
-			case globalRoom.Inbox <- cmd:
+			case gameRoom.Inbox <- cmd:
 			default:
 			}
 
@@ -129,15 +137,49 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func listRoomsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	rooms := manager.ListRooms()
+	_ = json.NewEncoder(w).Encode(rooms)
+}
+
+func createRoomHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	code := manager.CreateRoom()
+	_ = json.NewEncoder(w).Encode(map[string]string{"code": code})
+}
+
 func Start() {
 	config.InitConfig()
 	addr, err := config.GetEnvVariable("NETWORK_ADDR")
 	if err != nil {
 		log.Fatal(err)
 	}
-	globalRoom = room.New()
-	go globalRoom.Run()
+	manager = room.NewManager()
 	http.HandleFunc("/ws", wsHandler)
-	log.Printf("listening on %s (ws endpoint: /ws)", addr)
+	http.HandleFunc("/rooms", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			listRoomsHandler(w, r)
+		case http.MethodPost:
+			createRoomHandler(w, r)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	log.Printf("listening on %s (ws: /ws, api: /rooms)", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
