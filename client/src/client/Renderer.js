@@ -135,7 +135,7 @@ export class GameRenderer {
       ctx.fill();
       
       // Outline, highlight this player
-      ctx.strokeStyle = p.id === localPlayerId ? "white" : "rgba(200,0,0,0.8)";
+      ctx.strokeStyle = p.id === localPlayerId ? "rgba(200,200,255,0.8)" : "rgba(200,0,0,0.8)";
       ctx.lineWidth = p.id === localPlayerId ? 4 : 4;
       ctx.stroke();
 
