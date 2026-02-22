@@ -21,106 +21,17 @@ export class NetworkManager {
     this.snapB = null;
     this.interpDelayMs = 100;
 
-    // Server URLs: set in Vercel so the build bakes them in (redeploy after adding).
-    // VITE_WS_URL = WebSocket URL (e.g. wss://xxx.ngrok-free.app/ws). VITE_API_URL = HTTP base for /rooms (e.g. https://xxx.ngrok-free.app).
+    // Single lobby: only WebSocket. Set VITE_WS_URL in Vercel (e.g. wss://xxx.ngrok-free.app/ws).
     const env = typeof import.meta !== "undefined" ? import.meta.env : {};
     this.serverUrl = env.VITE_WS_URL || "ws://localhost:8080/ws";
-    const apiFromEnv = env.VITE_API_URL ? String(env.VITE_API_URL).trim().replace(/\/$/, "") : "";
-    const derivedApi = (() => {
-      const u = new URL(this.serverUrl);
-      return (u.protocol === "wss:" ? "https:" : "http:") + "//" + u.host;
-    })();
-    let apiBase;
-    try {
-      if (apiFromEnv && (apiFromEnv.startsWith("http://") || apiFromEnv.startsWith("https://"))) {
-        new URL(apiFromEnv);
-        apiBase = apiFromEnv;
-      } else {
-        apiBase = derivedApi;
-      }
-    } catch (_) {
-      apiBase = derivedApi;
-    }
-    this.apiBase = apiBase;
-    // Warn if we're on Vercel/production but still pointing at localhost (env not set at build time)
-    if (typeof window !== "undefined" && window.location?.host && !/^localhost$|^127\.0\.0\.1$/.test(window.location.host)) {
-      try {
-        const apiHost = new URL(this.apiBase).host;
-        if (/^localhost$|^127\.0\.0\.1$/.test(apiHost)) {
-          console.error(
-            "[Motion.io] API is set to localhost but the app is not. Set VITE_WS_URL and VITE_API_URL in Vercel Environment Variables, then redeploy."
-          );
-        }
-      } catch (_) {}
-    }
-    // Ngrok free tier shows an interstitial; this header skips it for API requests
-    this.apiHeaders = { "ngrok-skip-browser-warning": "true" };
-  }
-
-  async fetchRooms() {
-    const url = `${this.apiBase}/rooms`;
-    try {
-      const res = await fetch(url, {
-        headers: this.apiHeaders,
-        mode: "cors",
-        cache: "no-store",
-        credentials: "omit"
-      });
-      if (!res.ok) {
-        console.warn("[Motion.io] fetchRooms failed:", res.status, res.statusText, url);
-        return [];
-      }
-      const ct = res.headers.get("Content-Type") || "";
-      if (!ct.includes("application/json")) {
-        console.warn("[Motion.io] fetchRooms got non-JSON response:", ct?.slice(0, 50), url);
-        return [];
-      }
-      const data = await res.json();
-      return Array.isArray(data) ? data : [];
-    } catch (e) {
-      console.warn("[Motion.io] fetchRooms error:", e?.message || e, "URL:", url);
-      return [];
-    }
-  }
-
-  async createRoom() {
-    const url = `${this.apiBase}/rooms`;
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: this.apiHeaders,
-        mode: "cors",
-        cache: "no-store",
-        credentials: "omit"
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        console.warn("[Motion.io] createRoom failed:", res.status, res.statusText, url, text?.slice(0, 200));
-        return null;
-      }
-      const ct = res.headers.get("Content-Type") || "";
-      if (!ct.includes("application/json")) {
-        console.warn("[Motion.io] createRoom got non-JSON response:", ct?.slice(0, 50), url);
-        return null;
-      }
-      const data = await res.json();
-      return data?.code ?? null;
-    } catch (e) {
-      console.warn("[Motion.io] createRoom error:", e?.message || e, "URL:", url);
-      return null;
-    }
+    this.roomCode = "default";
   }
 
   encode(t, p) {
     return JSON.stringify({ t, p });
   }
 
-  joinGame(name, roomCode) {
-    if (!roomCode || !roomCode.trim()) {
-      console.warn("Room code required");
-      return false;
-    }
-    const code = roomCode.trim().toUpperCase();
+  joinGame(name) {
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       if (this.ws.readyState === WebSocket.OPEN) {
         this.ws.send(this.encode("hello", { v: 1, name }));
@@ -129,7 +40,7 @@ export class NetworkManager {
     }
 
     const sep = this.serverUrl.includes("?") ? "&" : "?";
-    const url = `${this.serverUrl}${sep}room=${encodeURIComponent(code)}`;
+    const url = `${this.serverUrl}${sep}room=${encodeURIComponent(this.roomCode)}`;
     this.ws = new WebSocket(url);
 
     this.ws.addEventListener("open", () => {

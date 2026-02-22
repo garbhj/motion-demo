@@ -54,20 +54,14 @@
         <label for="playerName">Enter Nickname</label>
       </div>
 
-      <div class="server-list-section">
-        <div class="server-list-header">
-          <span class="server-list-title">Lobbies</span>
-          <button type="button" id="refreshRoomsBtn" class="refresh-btn" title="Refresh">↻</button>
-        </div>
-        <ul id="roomList" class="room-list"></ul>
-        <p id="roomListEmpty" class="room-list-empty hidden">No lobbies yet. Create one below.</p>
-        <button type="button" id="createLobbyBtn" class="btn create-lobby-btn">+ Create lobby</button>
-      </div>
-
       <div class="action-area">
         <button id="enableCameraBtn" class="btn primary-btn">
           <span class="btn-text">Initialize Camera</span>
           <span class="btn-sub">Required to play</span>
+        </button>
+        <button type="button" id="playBtn" class="btn primary-btn hidden">
+          <span class="btn-text">Play</span>
+          <span class="btn-sub">Join the lobby</span>
         </button>
       </div>
 

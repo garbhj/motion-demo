@@ -37,6 +37,7 @@ var manager *room.Manager
 func wsHandler(w http.ResponseWriter, r *http.Request) {
 	roomCode := r.URL.Query().Get("room")
 	if roomCode == "" {
+		log.Printf("ws: 400 missing room code (path=%q, query=%q)", r.URL.Path, r.URL.RawQuery)
 		http.Error(w, "missing room code", http.StatusBadRequest)
 		return
 	}
