@@ -60,12 +60,26 @@ async function boot() {
   await tracker.initialize();
   tracker.setCanvas(debugCtx);
   
-  enableCameraBtn.innerText = "Start Camera";
+  enableCameraBtn.innerHTML = `<span class="btn-text">Initialize Camera</span><span class="btn-sub">Required to play</span>`;
   enableCameraBtn.disabled = false;
 
   enableCameraBtn.addEventListener("click", toggleCamera);
   playBtn.addEventListener("click", startGame);
 
+  // Logic for the Info Modal
+  const toggleModal = (show) => {
+    if(show) infoModal.classList.remove("hidden");
+    else infoModal.classList.add("hidden");
+  };
+
+  infoBtn.addEventListener("click", () => toggleModal(true));
+  closeInfoBtn.addEventListener("click", () => toggleModal(false));
+  
+  // Close modal if clicking outside the box
+  infoModal.addEventListener("click", (e) => {
+    if (e.target === infoModal) toggleModal(false);
+  });
+  
   document.getElementById("togglePipBtn").addEventListener("click", () => {
     pipContainer.classList.toggle("minimized");
   });
@@ -82,12 +96,12 @@ async function toggleCamera() {
 
 async function startCamera() {
   enableCameraBtn.disabled = true;
-  enableCameraBtn.innerText = "Camera Starting...";
+  // Update button text to look better with new CSS
+  enableCameraBtn.innerHTML = `<span class="btn-text">Starting...</span><span class="btn-sub">Please wait</span>`;
   
   const stream = await navigator.mediaDevices.getUserMedia({ video: true });
   video.srcObject = stream;
   
-  // Wait for video to start playing before kicking off loops
   video.addEventListener("loadeddata", () => {
     debugCanvas.width = video.videoWidth;
     debugCanvas.height = video.videoHeight;
@@ -95,10 +109,13 @@ async function startCamera() {
 
     pipContainer.classList.remove("hidden");
     
-    enableCameraBtn.innerText = "Disable Camera";
+    // Update button to show "On" state
+    enableCameraBtn.innerHTML = `<span class="btn-text">Camera Active</span><span class="btn-sub">Click to Disable</span>`;
+    enableCameraBtn.classList.add("active-state"); // Optional: add CSS for this if you want green border
     enableCameraBtn.disabled = false;
-    playBtn.disabled = false;
-    trackCameraLoop(); // Input tied to camera frame rate
+    
+    playBtn.disabled = false; // Enable the big Play button
+    trackCameraLoop();
   });
 }
 
@@ -110,7 +127,8 @@ async function stopCamera()  {
   }
 
   enableCameraBtn.disabled = false;
-  enableCameraBtn.innerText = "Start Camera";
+  // Reset Button Text
+  enableCameraBtn.innerHTML = `<span class="btn-text">Initialize Camera</span><span class="btn-sub">Required to play</span>`;
 
   pipContainer.classList.add("hidden");
   debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);  // Wipes the PiP
@@ -171,7 +189,7 @@ function trackCameraLoop() {
       // Update local logical state (Un-mirrored, used for game logic)
       localInput.x = handState.position.x;
       localInput.y = handState.position.y;
-      localInput.gesture = handState.gesture;
+      localInput.gesture = handState.gesture !== -1 ? handState.gesture : localInput.gesture;
 
       // 1. Draw raw AI skeleton
       tracker.drawDebugMesh(rawHand); 

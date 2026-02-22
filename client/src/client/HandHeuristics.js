@@ -1,5 +1,6 @@
 // Export an Enum for our Gestures to keep network payloads tiny (just sending 0, 1, 2, or 3)
 export const GESTURES = {
+  NONE: -1,
   OPEN: 0,
   CLOSED: 1,
   POINT: 2,
@@ -69,7 +70,7 @@ export function processHandData(landmarks) {
   }
 
   // 4. Evaluate Heuristics (Order of Priority matters!)
-  let detectedGesture = GESTURES.OPEN; // Default state
+  let detectedGesture = GESTURES.NONE; // Default state
 
   // A. Check for PINCH
   // Since landmarks are normalized (0 to 1), a distance of 0.09 is quite close.
@@ -91,7 +92,7 @@ export function processHandData(landmarks) {
     const straightness = dotProduct(vec1, vec2);
     
     // If dot product is close to 1, the finger is pointing straight out from the palm line
-    if (straightness > 0.8) { 
+    if (straightness > 0.75) { 
       detectedGesture = GESTURES.POINT;
     }
   }

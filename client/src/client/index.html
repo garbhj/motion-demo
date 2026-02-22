@@ -2,52 +2,104 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Motion.io</title>
   <link rel="stylesheet" href="./style.css">
-  <title>Motion.io - Control With Your Hand</title>
+  <!-- Optional: Add a nice font like Inter or Roboto from Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
 </head>
 <body>
-  <!-- Full Screen Game Layer -->
+
+  <!-- Game Layer -->
   <canvas id="game_canvas"></canvas>
 
+  <!-- Info/Help Button (Top Right) -->
+  <button id="infoBtn" class="icon-btn" aria-label="How to Play">
+    <span class="icon">i</span>
+  </button>
+
+<!-- Instructions Modal (Hidden by default) -->
+  <div id="infoModal" class="modal-overlay hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>How to Play</h2>
+        <button id="closeInfoBtn" class="close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        
+        <div class="tracking-blurb">
+          <strong>Privacy First:</strong> Motion.io uses your device's local AI to track hand movements. All processing is done right here in your browser—<strong>no video is ever recorded or sent to a server.</strong>
+        </div>
+
+        <ul class="instruction-list">
+          <li>
+            <span class="key">MOVE</span>
+            <span class="desc">Move open hand away from center</span>
+          </li>
+          <li>
+            <span class="key">RETRACT</span>
+            <span class="desc">Close/Pinch hand to pull flail</span>
+          </li>
+          <li>
+            <span class="key">ATTACK</span>
+            <span class="desc">Point finger to throw flail</span>
+          </li>
+          <li>
+            <span class="key">RECENTER</span>
+            <span class="desc">Press <b>'C'</b> to reset center point</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  
   <!-- Main Menu Overlay -->
   <div id="menu_screen" class="overlay">
     <div class="menu-box">
-      <h1>Motion.io</h1>
+      <div class="logo-area">
+        <h1>Motion<span class="highlight">.io</span></h1>
+        <p class="subtitle">Webcam Gesture Control</p>
+      </div>
       
       <div class="input-group">
-        <label for="playerName">Choose your name:</label>
-        <input type="text" id="playerName" placeholder="Enter name..." maxlength="12">
+        <input type="text" id="playerName" placeholder=" " maxlength="12" autocomplete="off">
+        <label for="playerName">Enter Nickname</label>
       </div>
 
-      <div class="tips">
-        <h3>How to Play:</h3>
-        <ul>
-          <li><b>Move:</b> Move your open hand away from the center.</li>
-          <li><b>Retract:</b> Pinch or close your hand to pull the flail close.</li>
-          <li><b>Attack:</b> Point to detach and throw your flail!</li>
-          <li><b>Recenter:</b> Press <b>'C'</b> to recenter the reference point.</li>
-        </ul>
+      <div class="action-area">
+        <button id="enableCameraBtn" class="btn primary-btn">
+          <span class="btn-text">Initialize Camera</span>
+          <span class="btn-sub">Required to play</span>
+        </button>
+        
+        <button id="startGameBtn" class="btn play-btn" disabled>
+          PLAY
+        </button>
       </div>
-
-      <button id="enableCameraBtn" class="btn primary-btn">Start Camera</button>
-      <button id="startGameBtn" class="btn primary-btn" disabled>PLAY GAME</button>
+      
+      <div class="footer-links">
+        <small>v1.0 &bull; Beta</small>
+      </div>
     </div>
   </div>
 
   <!-- In-Game UI Layer -->
-  <div id="game_ui_layer" class="hidden">
-    <button id="exitBtn" class="btn danger-btn">Exit Game</button>
-    <button id="recenterBtn" class="btn secondary-btn">Recenter Joystick (C)</button>
+  <div id="game_ui_layer" class="hidden ui-layer">
+    <div class="top-bar">
+      <button id="recenterBtn" class="btn sm-btn">Recenter (C)</button>
+      <button id="exitBtn" class="btn sm-btn danger-btn">Exit</button>
+    </div>
   </div>
 
-  <!-- Picture-in-Picture Webcam / Debug -->
+  <!-- HUD / PiP Container -->
   <div id="pip_container" class="hidden">
     <div class="pip-header">
-      <span>Camera Tracking</span>
-      <button id="togglePipBtn">Hide</button>
+      <div class="recording-dot"></div>
+      <span>TRACKING</span>
+      <button id="togglePipBtn" class="pip-toggle">-</button>
     </div>
     <div class="pip-video-wrapper">
-      <video id="webcam" autoplay playsinline></video>
+      <video id="webcam" autoplay playsinline muted></video>
       <canvas id="debug_canvas"></canvas> 
     </div>
   </div>
