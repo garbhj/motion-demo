@@ -202,7 +202,7 @@ async function onCreateLobby() {
     await refreshRoomList();
     joinRoom(code);
   } else {
-    alert("Could not create lobby. Is the server running?");
+    alert("Could not create lobby. Open the browser console (F12) to see the API URL and error. On Vercel, set VITE_API_URL and VITE_WS_URL in Environment Variables and redeploy.");
   }
 }
 

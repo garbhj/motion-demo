@@ -25,13 +25,23 @@ export class NetworkManager {
     // VITE_WS_URL = WebSocket URL (e.g. wss://xxx.ngrok-free.app/ws). VITE_API_URL = HTTP base for /rooms (e.g. https://xxx.ngrok-free.app).
     const env = typeof import.meta !== "undefined" ? import.meta.env : {};
     this.serverUrl = env.VITE_WS_URL || "ws://localhost:8080/ws";
-    // HTTP (list/create rooms) uses VITE_API_URL when set; otherwise derived from VITE_WS_URL for local dev.
-    this.apiBase = env.VITE_API_URL
-      ? String(env.VITE_API_URL).replace(/\/$/, "")
-      : (() => {
-          const u = new URL(this.serverUrl);
-          return (u.protocol === "wss:" ? "https:" : "http:") + "//" + u.host;
-        })();
+    const apiFromEnv = env.VITE_API_URL ? String(env.VITE_API_URL).trim().replace(/\/$/, "") : "";
+    const derivedApi = (() => {
+      const u = new URL(this.serverUrl);
+      return (u.protocol === "wss:" ? "https:" : "http:") + "//" + u.host;
+    })();
+    let apiBase;
+    try {
+      if (apiFromEnv && (apiFromEnv.startsWith("http://") || apiFromEnv.startsWith("https://"))) {
+        new URL(apiFromEnv);
+        apiBase = apiFromEnv;
+      } else {
+        apiBase = derivedApi;
+      }
+    } catch (_) {
+      apiBase = derivedApi;
+    }
+    this.apiBase = apiBase;
     // Warn if we're on Vercel/production but still pointing at localhost (env not set at build time)
     if (typeof window !== "undefined" && window.location?.host && !/^localhost$|^127\.0\.0\.1$/.test(window.location.host)) {
       try {
@@ -48,24 +58,33 @@ export class NetworkManager {
   }
 
   async fetchRooms() {
+    const url = `${this.apiBase}/rooms`;
     try {
-      const res = await fetch(`${this.apiBase}/rooms`, { headers: this.apiHeaders });
-      if (!res.ok) return [];
+      const res = await fetch(url, { headers: this.apiHeaders, mode: "cors" });
+      if (!res.ok) {
+        console.warn("[Motion.io] fetchRooms failed:", res.status, res.statusText, url);
+        return [];
+      }
       return await res.json();
     } catch (e) {
-      console.warn("fetch rooms failed:", e);
+      console.warn("[Motion.io] fetchRooms error:", e?.message || e, "URL:", url);
       return [];
     }
   }
 
   async createRoom() {
+    const url = `${this.apiBase}/rooms`;
     try {
-      const res = await fetch(`${this.apiBase}/rooms`, { method: "POST", headers: this.apiHeaders });
-      if (!res.ok) throw new Error("Create failed");
+      const res = await fetch(url, { method: "POST", headers: this.apiHeaders, mode: "cors" });
+      if (!res.ok) {
+        const text = await res.text();
+        console.warn("[Motion.io] createRoom failed:", res.status, res.statusText, url, text?.slice(0, 200));
+        return null;
+      }
       const data = await res.json();
       return data?.code ?? null;
     } catch (e) {
-      console.warn("create room failed:", e);
+      console.warn("[Motion.io] createRoom error:", e?.message || e, "URL:", url);
       return null;
     }
   }
