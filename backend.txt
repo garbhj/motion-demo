@@ -1,0 +1,12 @@
+Backend gist (server/):
+
+- Entry point: server/main.go prints two debug lines then calls network.Start().
+- Network: server/network/network.go starts an HTTP server with a WebSocket endpoint at /ws. It upgrades connections and loops on incoming messages.
+- Protocol: server/protocol defines a JSON envelope {t,p} with message types hello, input, welcome, state. Encode/Decode helpers handle envelope and payloads.
+- On hello: server logs version/name and replies with a Welcome payload (PlayerID "p1", TickHz 20). On input: logs ax/ay/boost. Unknown types are logged.
+- Config: server/config loads .env via godotenv and reads required env var NETWORK_ADDR to bind the server. It logs and fatal-exits on missing env.
+- Game state: server/game has State (tick, players) and Input structs. Step() is stubbed.
+- Room: server/room has a Room with inbox channel and stub Run(); messages.go is empty.
+- Dependencies: gorilla/websocket and godotenv (see server/go.mod).
+
+Overall: a minimal WebSocket server that speaks a small JSON protocol and logs incoming messages, with placeholders for game simulation and room management.
