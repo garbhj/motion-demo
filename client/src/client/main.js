@@ -16,6 +16,9 @@ const enableCameraBtn = document.getElementById("enableCameraBtn");
 const playBtn = document.getElementById("startGameBtn");
 const playerNameInput = document.getElementById("playerName");
 
+const sensSlider = document.getElementById("sensSlider");
+const sensValueDisplay = document.getElementById("sensValue");
+
 // --- Info Modal Logic ---
 const infoBtn = document.getElementById("infoBtn");
 const infoModal = document.getElementById("infoModal");
@@ -48,6 +51,7 @@ const renderer = new GameRenderer(gameCanvas);
 // State
 let localInput = { x: 0.5, y: 0.5, gesture: GESTURES.OPEN }; 
 let trackingCenter = { x: 0.5, y: 0.5 }; // Screen center ratio (0-1)
+let currentMaxRadius = 0.25; // The default tracking radius scale
 let worldState = null; 
 
 let lastVideoTime = -1;
@@ -56,7 +60,7 @@ let isPlaying = false;
 let networkInterval = null;
 let renderFrameId = null;  // 
 
-// Controls
+// --- Controls ---
 document.getElementById("exitBtn").addEventListener("click", exitGame);
 
 // To recenter joystick, click button and or key "c"
@@ -77,6 +81,19 @@ function resizeCanvas() {
 }
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
+
+// 
+function updateSensitivity() {
+  const val = parseInt(sensSlider.value);
+  currentMaxRadius = 0.4 - ((val - 1) / 9) * 0.35;
+  
+  // Update the UI text
+  if (sensValueDisplay) {
+    sensValueDisplay.innerText = val;
+  }
+}
+sensSlider.addEventListener("input", updateSensitivity);
+updateSensitivity();
 
 async function boot() {
   enableCameraBtn.innerText = "Loading AI...";
@@ -225,15 +242,14 @@ function networkLoop() {
   // Optional: Create a "deadzone" so slight hand jitters don't move you
   const distance = Math.hypot(dx, dy);
   const deadzone = 0.02; // Proportion of screen
-  const maxRadius = 0.25; // Max 
 
   let moveVector = { moveX: 0, moveY: 0, gesture: localInput.gesture };
 
   if (distance > deadzone) {
     // Cap at maxRadius and normalize to -1.0 to 1.0
-    const clampedDist = Math.min(distance, maxRadius);
-    moveVector.moveX = (dx / distance) * (clampedDist / maxRadius);
-    moveVector.moveY = (dy / distance) * (clampedDist / maxRadius);
+    const clampedDist = Math.min(distance, currentMaxRadius);
+    moveVector.moveX = (dx / distance) * (clampedDist / currentMaxRadius);
+    moveVector.moveY = (dy / distance) * (clampedDist / currentMaxRadius);
   }
 
   // Send Analog Vector to server
@@ -247,7 +263,7 @@ function renderLoop() {
 
   if (worldState) {
     // Offload all rendering to the new Renderer module
-    renderer.render(worldState, network.myId, localInput, trackingCenter);
+    renderer.render(worldState, network.myId, localInput, trackingCenter, currentMaxRadius);
   }
   requestAnimationFrame(renderLoop);
 }

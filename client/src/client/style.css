@@ -204,6 +204,26 @@ body, html {
 .danger-btn { border-color: var(--danger); color: var(--danger); }
 .danger-btn:hover { background: var(--danger); color: white; }
 
+/* --- Sensitivity Slider --- */
+.sensitivity-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 0 15px;
+  border-radius: 8px;
+  border: 1px solid #444;
+  color: white;
+  font-size: 0.85rem;
+  font-weight: 600;
+  pointer-events: auto; /* Required to click the slider */
+}
+
+.sensitivity-control input[type="range"] {
+  cursor: pointer;
+  accent-color: var(--primary); /* Makes the slider match your cyan theme */
+}
+
 /* --- PiP HUD --- */
 #pip_container {
   position: fixed; 

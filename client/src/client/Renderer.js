@@ -6,7 +6,7 @@ function getColorForId(id) {
   // 1. Handle missing IDs
   if (id === null || id === undefined) return "#aaa"; // Default grey
 
-  // 2. Ensure ID is a number (handle string IDs from server)
+  // 2. Ensure ID is a number (handle string IDs from real server)
   // Simple hash function for strings
   let numericId = 0;
   if (typeof id === 'number') {
@@ -84,8 +84,8 @@ export class GameRenderer {
   }
 
   // Called every frame by main.js
-  render(worldState, localPlayerId, localInput, trackingCenter) {
-    // console.log("LocalInput" + localInput.x + localInput.y + "\nLocalPlayerId:" + localPlayerId);
+  render(worldState, localPlayerId, localInput, trackingCenter, maxRadius) {
+    // console.log("LocalInput" + localInput.x + localInput.y + "\nLocalPlayerId:" + localPlayerId + "\nMaxRadius:" + maxRadius);
 
     const ctx = this.ctx;
     const width = this.canvas.width;
@@ -208,7 +208,7 @@ export class GameRenderer {
     ctx.restore(); 
 
     // 7. Draw HUD (Heads Up Display - Drawn fixed to the screen)
-    this.drawJoystickHUD(localInput, trackingCenter, width, height);
+    this.drawJoystickHUD(localInput, trackingCenter, width, height, maxRadius);
   }
 
   drawMap(config) {
@@ -237,35 +237,100 @@ export class GameRenderer {
     this.ctx.stroke();
   }
 
-  drawJoystickHUD(localInput, trackingCenter, width, height) {
+
+    //   // Draw Tracking Center
+    // ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+    // ctx.beginPath();
+    // ctx.arc(centerX, centerY, 50, 0, Math.PI * 2); // Deadzone visual
+    // ctx.stroke();
+
+
+drawJoystickHUD(localInput, trackingCenter, width, height, maxRadius) {
     const ctx = this.ctx;
     const centerX = trackingCenter.x * width;
     const centerY = trackingCenter.y * height;
     const handX = localInput.x * width;
     const handY = localInput.y * height;
 
-    // Draw Tracking Center
+    // The logic in main.js uses normalized screen ratios (0 to 1).
+    // Because the screen is a rectangle, a uniform radius in ratio-space 
+    // forms an ellipse in pixel-space.
+    const maxRadiusPxX = maxRadius * width;
+    const maxRadiusPxY = maxRadius * height;
+    // const deadzonePxX = 0.02 * width;
+    // const deadzonePxY = 0.02 * height;
+
+    const dx = localInput.x - trackingCenter.x;
+    const dy = localInput.y - trackingCenter.y;
+    const distance = Math.hypot(dx, dy);
+
+    // // Draw Max Boundary Ellipse (Dashed)
+    // ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+    // ctx.lineWidth = 2;
+    // ctx.setLineDash([10, 10]);
+    // ctx.beginPath();
+    // ctx.ellipse(centerX, centerY, maxRadiusPxX, maxRadiusPxY, 0, 0, Math.PI * 2);
+    // ctx.stroke();
+    // ctx.setLineDash([]); // Reset dashes
+
+    // // 2. Draw Deadzone (Inner Solid Ring)
+    // ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+    // ctx.beginPath();
+    // ctx.ellipse(centerX, centerY, deadzonePxX, deadzonePxY, 0, 0, Math.PI * 2);
+    // ctx.stroke();
+
+    // Draw Tracking Center as a circle because I prefer it like this
     ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
     ctx.beginPath();
-    ctx.arc(centerX, centerY, 50, 0, Math.PI * 2); // Deadzone visual
+    ctx.arc(centerX, centerY, 50, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Draw Line connecting center to hand
-    ctx.beginPath();
-    ctx.moveTo(centerX, centerY);
-    ctx.lineTo(handX, handY);
-    ctx.stroke();
+    // 3. Draw Connecting Line
+    if (distance > maxRadius) {
+      // Find the exact pixel coordinate where the line crosses the max boundary
+      const limitRatio = maxRadius / distance;
+      const limitPxX = centerX + (handX - centerX) * limitRatio;
+      const limitPxY = centerY + (handY - centerY) * limitRatio;
 
-    // Draw Hand Cursor
-    ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
+      // Solid inner line (up to max speed)
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
+      ctx.lineTo(limitPxX, limitPxY);
+      ctx.strokeStyle = "rgba(0, 188, 212, 0.9)"; // Cyan for active power
+      ctx.lineWidth = 4;
+      ctx.stroke();
+
+      // Faded outer line (wasted movement beyond max speed)
+      ctx.beginPath();
+      ctx.moveTo(limitPxX, limitPxY);
+      ctx.lineTo(handX, handY);
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    } else {
+      // Hand is inside the boundary, entire line is solid
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
+      ctx.lineTo(handX, handY);
+      ctx.strokeStyle = "rgba(0, 188, 212, 0.9)";
+      ctx.lineWidth = 4;
+      ctx.stroke();
+    }
+
+    // 4. Draw Hand Cursor
+    ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
     if (localInput.gesture === GESTURES.PINCH || localInput.gesture === GESTURES.CLOSED) {
-      ctx.fillStyle = "rgba(255, 0, 0, 0.2)";
+      ctx.fillStyle = "rgba(255, 0, 0, 0.4)"; // Red for retract
     }
     if (localInput.gesture == GESTURES.POINT) {
-      ctx.fillStyle = "rgba(0, 50, 255, 0.2)";
+      ctx.fillStyle = "rgba(0, 255, 0, 0.4)"; // Green for attack
     }
+    
     ctx.beginPath();
-    ctx.arc(handX, handY, 30, 0, Math.PI * 2);
+    ctx.arc(handX, handY, 15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "white";
+    ctx.lineWidth = 2;
     ctx.stroke();
   }
 }
