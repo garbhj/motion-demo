@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Motion.io</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <script type="module" crossorigin src="/assets/index-PnjIcZ_Z.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-Do6834jw.css">
+</head>
+<body>
+
+  <!-- Game Layer -->
+  <canvas id="game_canvas"></canvas>
+
+  <!-- Info/Help Button (Top Right) -->
+  <button id="infoBtn" class="info-icon-btn" aria-label="How to Play">
+    <span class="icon">i</span>
+  </button>
+
+  <!-- Instructions Modal (Hidden by default) -->
+  <div id="infoModal" class="modal-overlay hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>How to Play</h2>
+        <button id="closeInfoBtn" class="close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="tracking-blurb">
+          <strong>Privacy Note:</strong> Motion.io uses a model that runs entirely on your device to track hand movements. All processing is done in your browser: <strong>no video is ever recorded or sent to a server.</strong>
+        </div>
+        <ul class="instruction-list">
+          <li><span class="key">MOVE</span><span class="desc">Open hand away from center</span></li>
+          <li><span class="key">SPRINT</span><span class="desc">Pinch to move faster</span></li>
+          <li><span class="key">ATTACK</span><span class="desc">Fist to shoot orb along its orbit</span></li>
+          <li><span class="key">POINT</span><span class="desc">Point for normal movement</span></li>
+          <li><span class="key">RECENTER</span><span class="desc">Press <b>C</b> to reset center</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Menu Overlay -->
+  <div id="menu_screen" class="overlay">
+    <div class="menu-box">
+      <div class="logo-area">
+        <img src="/assets/Logo-B4XwWyYj.png" alt="Motion.io" class="logo-img">
+        <p class="subtitle">Webcam Gesture Control</p>
+      </div>
+
+      <div class="input-group">
+        <input type="text" id="playerName" placeholder=" " maxlength="12" autocomplete="off">
+        <label for="playerName">Enter Nickname</label>
+      </div>
+
+      <div class="server-list-section">
+        <div class="server-list-header">
+          <span class="server-list-title">Lobbies</span>
+          <button type="button" id="refreshRoomsBtn" class="refresh-btn" title="Refresh">↻</button>
+        </div>
+        <ul id="roomList" class="room-list"></ul>
+        <p id="roomListEmpty" class="room-list-empty hidden">No lobbies yet. Create one below.</p>
+        <button type="button" id="createLobbyBtn" class="btn create-lobby-btn">+ Create lobby</button>
+      </div>
+
+      <div class="action-area">
+        <button id="enableCameraBtn" class="btn primary-btn">
+          <span class="btn-text">Initialize Camera</span>
+          <span class="btn-sub">Required to play</span>
+        </button>
+      </div>
+
+      <div class="footer-links">
+        <small>v1.0 &bull; Beta</small>
+      </div>
+    </div>
+  </div>
+
+  <!-- In-Game UI Layer -->
+  <div id="game_ui_layer" class="hidden ui-layer">
+    <div class="top-bar">
+      <button id="recenterBtn" class="btn sm-btn">Recenter (C)</button>
+      <button id="exitBtn" class="btn sm-btn danger-btn">Exit</button>
+    </div>
+  </div>
+
+  <!-- HUD / PiP Container -->
+  <div id="pip_container" class="hidden">
+    <div class="pip-header">
+      <div class="recording-dot"></div>
+      <span>TRACKING</span>
+      <button id="togglePipBtn" class="pip-toggle">-</button>
+    </div>
+    <div class="pip-video-wrapper">
+      <video id="webcam" autoplay playsinline muted></video>
+      <canvas id="debug_canvas"></canvas>
+    </div>
+  </div>
+
+</body>
+</html>
