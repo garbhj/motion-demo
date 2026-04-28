@@ -3,10 +3,10 @@ package game
 // Internal truth authoritative game state
 
 type State struct {
-	Tick       int
-	Players    map[string]*Player
-	Orbs       map[string]*Orb
-	Eliminated []EliminatedEntry
+	Tick    int
+	Players map[string]*Player
+	Orbs    map[string]*Orb
+	// Eliminated []EliminatedEntry
 }
 
 type EliminatedEntry struct {

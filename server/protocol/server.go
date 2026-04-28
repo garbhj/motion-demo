@@ -6,10 +6,10 @@ type Welcome struct {
 }
 
 type State struct {
-	Tick       int                 `json:"tick"`
-	Players    []PlayerSnapshot    `json:"players"`
-	Orbs       []OrbSnapshot       `json:"orbs,omitempty"`
-	Eliminated []EliminatedSnapshot `json:"eliminated,omitempty"`
+	Tick    int              `json:"tick"`
+	Players []PlayerSnapshot `json:"players"`
+	Orbs    []OrbSnapshot    `json:"orbs,omitempty"`
+	// Eliminated []EliminatedSnapshot `json:"eliminated,omitempty"`
 }
 
 type PlayerSnapshot struct {

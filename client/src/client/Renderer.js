@@ -202,10 +202,8 @@ export class GameRenderer {
     ctx.textBaseline = "middle";
 
     const aliveEntries = (players || []).map(p => ({ id: p.id, name: p.name || `Player ${p.id}`, score: p.score ?? 0, alive: true }));
-    const outEntries = (eliminated || []).map(e => ({ id: e.id, name: e.name || `Player ${e.id}`, score: e.score ?? 0, alive: false }));
     aliveEntries.sort((a, b) => b.score - a.score);
-    outEntries.sort((a, b) => b.score - a.score);
-    const entries = [...aliveEntries, ...outEntries];
+    const entries = [...aliveEntries];
     if (entries.length === 0) return;
 
     const boxWidth = Math.min(320, width - 40);

@@ -19,8 +19,8 @@ type Room struct {
 	nextID         int
 	quit           chan struct{}
 
-	Code    string             // room code (e.g. "ABC123")
-	OnEmpty func(code string)   // called when last player leaves
+	Code    string            // room code (e.g. "ABC123")
+	OnEmpty func(code string) // called when last player leaves
 }
 
 func New() *Room {
@@ -170,10 +170,10 @@ func (r *Room) sendStateTo(c Conn) {
 
 func (r *Room) buildSnapshot() protocol.State {
 	snapshot := protocol.State{
-		Tick:       r.state.Tick,
-		Players:    make([]protocol.PlayerSnapshot, 0, len(r.state.Players)),
-		Orbs:       make([]protocol.OrbSnapshot, 0, len(r.state.Orbs)),
-		Eliminated: make([]protocol.EliminatedSnapshot, 0, len(r.state.Eliminated)),
+		Tick:    r.state.Tick,
+		Players: make([]protocol.PlayerSnapshot, 0, len(r.state.Players)),
+		Orbs:    make([]protocol.OrbSnapshot, 0, len(r.state.Orbs)),
+		// Eliminated: make([]protocol.EliminatedSnapshot, 0, len(r.state.Eliminated)),
 	}
 	for id, p := range r.state.Players {
 		snapshot.Players = append(snapshot.Players, protocol.PlayerSnapshot{
@@ -185,9 +185,9 @@ func (r *Room) buildSnapshot() protocol.State {
 			Score:   p.Score,
 		})
 	}
-	for _, e := range r.state.Eliminated {
-		snapshot.Eliminated = append(snapshot.Eliminated, protocol.EliminatedSnapshot{ID: e.ID, Name: e.Name, Score: e.Score})
-	}
+	// for _, e := range r.state.Eliminated {
+	// 	snapshot.Eliminated = append(snapshot.Eliminated, protocol.EliminatedSnapshot{ID: e.ID, Name: e.Name, Score: e.Score})
+	// }
 	for _, o := range r.state.Orbs {
 		snapshot.Orbs = append(snapshot.Orbs, protocol.OrbSnapshot{
 			ID:      o.ID,

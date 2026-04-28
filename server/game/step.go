@@ -101,9 +101,9 @@ func Step(s *State, inputs map[string]Input) {
 	for _, k := range kills {
 		victim, vOk := s.Players[k.victimID]
 		killer, kOk := s.Players[k.killerID]
-		if vOk {
-			s.Eliminated = append(s.Eliminated, EliminatedEntry{ID: k.victimID, Name: victim.Name, Score: victim.Score})
-		}
+		// if vOk {
+		// 	s.Eliminated = append(s.Eliminated, EliminatedEntry{ID: k.victimID, Name: victim.Name, Score: victim.Score})
+		// }
 		if kOk && killer != nil && vOk {
 			// Active: base kill reward. Very active: bonus from victim's score
 			killer.Score += PointsPerKill + victim.Score*PointsStealFraction
