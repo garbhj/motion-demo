@@ -26,27 +26,24 @@ if ! curl -s "$NGROK_ADDR/api/tunnels" >/dev/null 2>&1; then
 fi
 
 PUBLIC_URL=""
-for _ in $(seq 1 20); do
+for _ in $(seq 1 50); do
   BODY="$(curl -s "$NGROK_ADDR/api/tunnels" || true)"
   if [ -z "$BODY" ]; then
     sleep 0.2
     continue
   fi
-  PUBLIC_URL="$(printf "%s" "$BODY" | python3 - <<'PY'
+  PUBLIC_URL="$(printf "%s" "$BODY" | python3 -c "
 import json, sys
 try:
     data = json.load(sys.stdin)
 except Exception:
-    print("")
     sys.exit(0)
-for t in data.get("tunnels", []):
-    url = t.get("public_url", "")
-    if url.startswith("https://"):
+for t in data.get('tunnels', []):
+    url = t.get('public_url', '')
+    if url.startswith('https://') or url.startswith('http://'):
         print(url)
         sys.exit(0)
-print("")
-PY
-)"
+")"
   if [ -n "$PUBLIC_URL" ]; then
     break
   fi

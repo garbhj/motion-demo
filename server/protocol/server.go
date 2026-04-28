@@ -18,8 +18,8 @@ type PlayerSnapshot struct {
 	X       float64 `json:"x"`
 	Y       float64 `json:"y"`
 	A       float64 `json:"a,omitempty"`
-	Stamina float64 `json:"stamina,omitempty"`
-	Score   float64 `json:"score,omitempty"`
+	Stamina float64 `json:"stamina"`
+	Score   float64 `json:"score"`
 }
 
 type EliminatedSnapshot struct {

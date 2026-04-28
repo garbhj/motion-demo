@@ -72,8 +72,8 @@ export function processHandData(landmarks) {
   let detectedGesture = GESTURES.OPEN; // Default state
 
   // A. Check for PINCH
-  // Since landmarks are normalized (0 to 1), a distance of 0.09 is quite close.
-  const pinchThreshold = 0.09; 
+  // Since landmarks are normalized (0 to 1)
+  const pinchThreshold = 0.07; 
   const distThumbIndex = getDistance(thumbTip, indexTip);
   const distThumbMiddle = getDistance(thumbTip, middleTip);
 
