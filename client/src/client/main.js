@@ -13,8 +13,11 @@ const pipContainer = document.getElementById("pip_container");
 const mainMenu = document.getElementById("menu_screen");
 const inGameUi = document.getElementById("game_ui_layer");
 const enableCameraBtn = document.getElementById("enableCameraBtn");
-const playBtn = document.getElementById("playBtn");
 const playerNameInput = document.getElementById("playerName");
+const roomListEl = document.getElementById("roomList");
+const roomListEmptyEl = document.getElementById("roomListEmpty");
+const refreshRoomsBtn = document.getElementById("refreshRoomsBtn");
+const createLobbyBtn = document.getElementById("createLobbyBtn");
 
 const infoBtn = document.getElementById("infoBtn");
 const infoModal = document.getElementById("infoModal");
@@ -90,10 +93,20 @@ async function boot() {
   enableCameraBtn.disabled = false;
 
   enableCameraBtn.addEventListener("click", toggleCamera);
-  if (playBtn) playBtn.addEventListener("click", onPlay);
+  if (refreshRoomsBtn) {
+    refreshRoomsBtn.addEventListener("click", refreshRoomList);
+  }
+  if (createLobbyBtn) {
+    createLobbyBtn.disabled = true;
+    createLobbyBtn.addEventListener("click", onCreateLobby);
+  }
   const togglePipBtn = document.getElementById("togglePipBtn");
   if (togglePipBtn) {
     togglePipBtn.addEventListener("click", () => pipContainer.classList.toggle("minimized"));
+  }
+
+  if (roomListEl && roomListEmptyEl) {
+    refreshRoomList();
   }
 }
 
@@ -123,7 +136,7 @@ async function startCamera() {
     enableCameraBtn.innerHTML = `<span class="btn-text">Camera Active</span><span class="btn-sub">Click to Disable</span>`;
     enableCameraBtn.classList.add("active-state");
     enableCameraBtn.disabled = false;
-    if (playBtn) playBtn.classList.remove("hidden");
+    if (createLobbyBtn) createLobbyBtn.disabled = false;
     trackCameraLoop();
   });
 }
@@ -138,19 +151,89 @@ async function stopCamera() {
   enableCameraBtn.disabled = false;
   enableCameraBtn.innerHTML = `<span class="btn-text">Initialize Camera</span><span class="btn-sub">Required to play</span>`;
   enableCameraBtn.classList.remove("active-state");
-  if (playBtn) playBtn.classList.add("hidden");
+  if (createLobbyBtn) createLobbyBtn.disabled = true;
 
   pipContainer.classList.add("hidden");
   debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
 }
 
-function onPlay() {
+async function refreshRoomList() {
+  if (!roomListEl || !roomListEmptyEl) return;
+  const rooms = await network.fetchRooms();
+  roomListEl.innerHTML = "";
+  if (rooms.length === 0) {
+    roomListEmptyEl.classList.remove("hidden");
+  } else {
+    roomListEmptyEl.classList.add("hidden");
+    for (const room of rooms) {
+      const li = document.createElement("li");
+      li.className = "room-item";
+      li.innerHTML = `<span class="room-code">${escapeHtml(room.code)}</span><span class="room-players">${room.players} player${room.players !== 1 ? "s" : ""}</span>`;
+      li.dataset.code = room.code;
+      li.addEventListener("click", () => {
+        if (!isCameraActive) {
+          alert("Please initialize the camera first to play.");
+          return;
+        }
+        joinRoom(room.code);
+      });
+      roomListEl.appendChild(li);
+    }
+  }
+}
+
+function escapeHtml(s) {
+  const div = document.createElement("div");
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+async function onCreateLobby() {
+  if (!isCameraActive) {
+    alert("Please initialize the camera first to play.");
+    return;
+  }
+  createLobbyBtn.disabled = true;
+  createLobbyBtn.textContent = "Creating…";
+  const code = await network.createRoom();
+  createLobbyBtn.disabled = false;
+  createLobbyBtn.textContent = "+ Create lobby";
+  if (code) {
+    // Refresh list (may fail on CORS/cache); then optimistically show the new room and join
+    await refreshRoomList();
+    ensureRoomInList(code, 1);
+    joinRoom(code);
+  } else {
+    alert("Could not create lobby. Open the browser console (F12) to see the API URL and error. On Vercel, set VITE_API_URL and VITE_WS_URL in Environment Variables and redeploy.");
+  }
+}
+
+function ensureRoomInList(code, players) {
+  if (!roomListEl || !roomListEmptyEl) return;
+  const existing = roomListEl.querySelector(`[data-code="${escapeHtml(code)}"]`);
+  if (existing) return;
+  roomListEmptyEl.classList.add("hidden");
+  const li = document.createElement("li");
+  li.className = "room-item";
+  li.innerHTML = `<span class="room-code">${escapeHtml(code)}</span><span class="room-players">${players} player${players !== 1 ? "s" : ""}</span>`;
+  li.dataset.code = code;
+  li.addEventListener("click", () => {
+    if (!isCameraActive) {
+      alert("Please initialize the camera first to play.");
+      return;
+    }
+    joinRoom(code);
+  });
+  roomListEl.appendChild(li);
+}
+
+function joinRoom(code) {
   if (!isCameraActive) {
     alert("Please initialize the camera first to play.");
     return;
   }
   const name = playerNameInput.value.trim() || "Anonymous";
-  if (!network.joinGame(name)) return;
+  if (!network.joinGame(name, code)) return;
 
   mainMenu.classList.add("hidden");
   inGameUi.classList.remove("hidden");
@@ -168,6 +251,7 @@ function exitGame() {
 
   mainMenu.classList.remove("hidden");
   inGameUi.classList.add("hidden");
+  refreshRoomList();
 
   const ctx = gameCanvas.getContext("2d");
   ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);

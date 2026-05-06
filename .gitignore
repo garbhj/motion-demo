@@ -4,3 +4,4 @@
 # wow, cool trick, this ignores all .env files in your whole project. :)
 .DS_Store
 node_modules/
+AGENTS.md
