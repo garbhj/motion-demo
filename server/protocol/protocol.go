@@ -9,6 +9,7 @@ const (
 	MsgInput   = "input"
 	MsgWelcome = "welcome"
 	MsgState   = "state"
+	MsgError   = "error"
 )
 
 const (

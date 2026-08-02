@@ -4,6 +4,7 @@ import "motion/game"
 
 type Conn interface {
 	Send([]byte) error
+	SendBinary([]byte) error
 	Close() error
 }
 
@@ -16,6 +17,7 @@ type Join struct {
 
 type JoinResult struct {
 	PlayerID string
+	Full     bool // true => join rejected (room at capacity); PlayerID is empty
 }
 
 // Input: latest input for a player

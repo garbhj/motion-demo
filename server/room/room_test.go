@@ -19,6 +19,10 @@ func (f *fakeConn) Send(b []byte) error {
 	return nil
 }
 
+// SendBinary behaves identically to Send for test purposes — the mocks
+// don't care about actual WS frame typing, only byte content.
+func (f *fakeConn) SendBinary(b []byte) error { return f.Send(b) }
+
 func (f *fakeConn) Close() error {
 	return nil
 }
@@ -40,26 +44,22 @@ func TestRoomJoinBroadcastIncludesPlayer(t *testing.T) {
 	for {
 		select {
 		case b := <-fc.sendCh:
-			env, err := protocol.DecodeEnvelope(b)
-			if err != nil {
-				t.Fatalf("decode envelope: %v", err)
-			}
-			if env.T != protocol.MsgState {
-				continue
-			}
-			state, err := protocol.DecodePayload[protocol.State](env)
+			state, err := protocol.DecodeStateBinary(b)
 			if err != nil {
 				t.Fatalf("decode state: %v", err)
 			}
-			found := false
-			for _, p := range state.Players {
-				if p.ID == res.PlayerID {
-					found = true
+			var found *protocol.PlayerSnapshot
+			for i := range state.Players {
+				if state.Players[i].ID == res.PlayerID {
+					found = &state.Players[i]
 					break
 				}
 			}
-			if !found {
+			if found == nil {
 				t.Fatalf("player %q not found in state snapshot", res.PlayerID)
+			}
+			if !found.Alive {
+				t.Fatalf("expected freshly joined player to be Alive in the broadcast snapshot")
 			}
 			return
 		case <-timeout:
@@ -97,13 +97,9 @@ func TestRoomTwoClientsSeeBothPlayers(t *testing.T) {
 		for {
 			select {
 			case b := <-fc.sendCh:
-				env, err := protocol.DecodeEnvelope(b)
-				if err != nil || env.T != protocol.MsgState {
-					continue
-				}
-				st, err := protocol.DecodePayload[protocol.State](env)
+				st, err := protocol.DecodeStateBinary(b)
 				if err != nil {
-					t.Fatalf("decode state: %v", err)
+					continue
 				}
 				foundA, foundB := false, false
 				for _, p := range st.Players {
@@ -146,13 +142,9 @@ func TestRoomLeaveRemovesPlayerFromSnapshots(t *testing.T) {
 		for {
 			select {
 			case b := <-fc.sendCh:
-				env, err := protocol.DecodeEnvelope(b)
-				if err != nil || env.T != protocol.MsgState {
-					continue
-				}
-				st, err := protocol.DecodePayload[protocol.State](env)
+				st, err := protocol.DecodeStateBinary(b)
 				if err != nil {
-					t.Fatalf("decode state: %v", err)
+					continue
 				}
 				found := false
 				for _, p := range st.Players {
@@ -193,7 +185,8 @@ func (s *slowConn) Send(b []byte) error {
 	<-s.block // block until released
 	return nil
 }
-func (s *slowConn) Close() error { return nil }
+func (s *slowConn) SendBinary(b []byte) error { return s.Send(b) }
+func (s *slowConn) Close() error              { return nil }
 
 func TestRoomBroadcastDoesNotDeadlockOnSlowConn(t *testing.T) {
 	r := New()
@@ -237,8 +230,7 @@ func TestRoomBroadcastRateRoughly20Hz(t *testing.T) {
 	for {
 		select {
 		case b := <-fc.sendCh:
-			env, err := protocol.DecodeEnvelope(b)
-			if err == nil && env.T == protocol.MsgState {
+			if len(b) > 0 && b[0] == protocol.BinMsgState {
 				count++
 			}
 		case <-deadline:
@@ -271,13 +263,9 @@ func TestRoomBroadcastShowsMovement(t *testing.T) {
 	for seen < 2 {
 		select {
 		case b := <-fc.sendCh:
-			env, err := protocol.DecodeEnvelope(b)
-			if err != nil || env.T != protocol.MsgState {
-				continue
-			}
-			st, err := protocol.DecodePayload[protocol.State](env)
+			st, err := protocol.DecodeStateBinary(b)
 			if err != nil {
-				t.Fatalf("decode state: %v", err)
+				continue
 			}
 			for _, p := range st.Players {
 				if p.ID == res.PlayerID {

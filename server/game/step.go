@@ -5,7 +5,27 @@ import "math"
 func Step(s *State, inputs map[string]Input) {
 	s.Tick++
 
+	// Respawn pass: revive anyone whose respawn timer has elapsed.
+	// RespawnAtTick > 0 distinguishes "scheduled to respawn" from the zero
+	// value, so a Player{} literal that forgets Alive:true stays visibly
+	// dead instead of silently teleporting on the next tick.
 	for id, p := range s.Players {
+		if !p.Alive && p.RespawnAtTick > 0 && s.Tick >= p.RespawnAtTick {
+			x, y := SpawnPoint()
+			p.X, p.Y = x, y
+			p.VX, p.VY = 0, 0
+			p.Stamina = StaminaMax
+			p.Score = 0
+			p.Alive = true
+			p.RespawnAtTick = 0
+			s.Orbs[id] = NewOrb(id, p)
+		}
+	}
+
+	for id, p := range s.Players {
+		if !p.Alive {
+			continue
+		}
 		inp, ok := inputs[id]
 		if !ok {
 			inp = Input{}
@@ -54,23 +74,16 @@ func Step(s *State, inputs map[string]Input) {
 		p.X += p.VX
 		p.Y += p.VY
 
-		// Keep player inside map bounds
-		if p.X < PlayerRadius {
-			p.X = PlayerRadius
-			p.VX = 0
-		}
-		if p.X > MapWidth-PlayerRadius {
-			p.X = MapWidth - PlayerRadius
-			p.VX = 0
-		}
-		if p.Y < PlayerRadius {
-			p.Y = PlayerRadius
-			p.VY = 0
-		}
-		if p.Y > MapHeight-PlayerRadius {
-			p.Y = MapHeight - PlayerRadius
-			p.VY = 0
-		}
+		clampToMapBounds(p)
+		resolvePlayerObstacleCollision(p)
+		// Re-clamp: the shipped obstacle list never touches the map edge
+		// (checked in obstacles.go), so this is a no-op today, but it
+		// keeps an obstacle placed near a wall from ever shoving a player
+		// out of bounds instead of just defending against future obstacle
+		// placements without needing to re-verify the edge-clearance
+		// invariant by hand each time.
+		clampToMapBounds(p)
+
 		// Passive: points for staying alive in the lobby
 		p.Score += PointsPerTickAlive
 	}
@@ -82,12 +95,12 @@ func Step(s *State, inputs map[string]Input) {
 		if orb.Mode != OrbShot {
 			continue
 		}
-		_, ownerOk := s.Players[ownerID]
-		if !ownerOk {
+		owner, ownerOk := s.Players[ownerID]
+		if !ownerOk || !owner.Alive {
 			continue
 		}
 		for otherID, other := range s.Players {
-			if otherID == ownerID {
+			if otherID == ownerID || !other.Alive {
 				continue
 			}
 			dx := orb.X - other.X
@@ -100,15 +113,24 @@ func Step(s *State, inputs map[string]Input) {
 	}
 	for _, k := range kills {
 		victim, vOk := s.Players[k.victimID]
-		killer, kOk := s.Players[k.killerID]
-		// if vOk {
-		// 	s.Eliminated = append(s.Eliminated, EliminatedEntry{ID: k.victimID, Name: victim.Name, Score: victim.Score})
-		// }
-		if kOk && killer != nil && vOk {
+		if !vOk || !victim.Alive {
+			continue // already resolved this tick (e.g. two shooters, one victim)
+		}
+		killerName := ""
+		if killer, kOk := s.Players[k.killerID]; kOk && killer != nil {
 			// Active: base kill reward. Very active: bonus from victim's score
 			killer.Score += PointsPerKill + victim.Score*PointsStealFraction
+			killerName = killer.Name
 		}
-		delete(s.Players, k.victimID)
+		s.Kills = append(s.Kills, KillEvent{
+			KillerID:   k.killerID,
+			KillerName: killerName,
+			VictimID:   k.victimID,
+			VictimName: victim.Name,
+		})
+		victim.Alive = false
+		victim.RespawnAtTick = s.Tick + RespawnDelayTicks
+		victim.VX, victim.VY = 0, 0
 		delete(s.Orbs, k.victimID)
 	}
 
@@ -160,7 +182,7 @@ func Step(s *State, inputs map[string]Input) {
 			dx := orb.X - player.X
 			dy := orb.Y - player.Y
 			dist := math.Hypot(dx, dy)
-			if orb.ShotTicksLeft <= 0 || dist > OrbMaxShotDistance {
+			if orb.ShotTicksLeft <= 0 || dist > OrbMaxShotDistance || hitsAnyObstacle(orb.X, orb.Y, OrbHitRadius) {
 				orb.Mode = OrbReturn
 			}
 
@@ -194,6 +216,27 @@ func Step(s *State, inputs map[string]Input) {
 				orb.CooldownTicks--
 			}
 		}
+	}
+}
+
+// clampToMapBounds keeps a player inside the arena, zeroing the velocity
+// component that was driving it out of bounds.
+func clampToMapBounds(p *Player) {
+	if p.X < PlayerRadius {
+		p.X = PlayerRadius
+		p.VX = 0
+	}
+	if p.X > MapWidth-PlayerRadius {
+		p.X = MapWidth - PlayerRadius
+		p.VX = 0
+	}
+	if p.Y < PlayerRadius {
+		p.Y = PlayerRadius
+		p.VY = 0
+	}
+	if p.Y > MapHeight-PlayerRadius {
+		p.Y = MapHeight - PlayerRadius
+		p.VY = 0
 	}
 }
 

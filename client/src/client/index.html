@@ -61,8 +61,14 @@
         </button>
         <button type="button" id="playBtn" class="btn primary-btn hidden">
           <span class="btn-text">Play</span>
-          <span class="btn-sub">Join the lobby</span>
+          <span class="btn-sub">Join a public arena</span>
         </button>
+        <button type="button" id="createRoomBtn" class="btn sm-btn hidden">Create Private Room</button>
+        <div class="input-group hidden" id="joinCodeGroup">
+          <input type="text" id="joinCodeInput" placeholder=" " maxlength="6" autocomplete="off">
+          <label for="joinCodeInput">Room Code</label>
+        </div>
+        <button type="button" id="joinRoomBtn" class="btn sm-btn hidden">Join Room</button>
       </div>
 
       <div class="footer-links">
@@ -74,9 +80,11 @@
   <!-- In-Game UI Layer -->
   <div id="game_ui_layer" class="hidden ui-layer">
     <div class="top-bar">
+      <span id="roomCodeLabel" class="room-code-label"></span>
       <button id="recenterBtn" class="btn sm-btn">Recenter (C)</button>
       <button id="exitBtn" class="btn sm-btn danger-btn">Exit</button>
     </div>
+    <div id="killFeed" class="kill-feed"></div>
   </div>
 
   <!-- HUD / PiP Container -->

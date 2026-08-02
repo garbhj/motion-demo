@@ -119,13 +119,15 @@ export class GameRenderer {
 
     // 6. Draw Players
     worldState.players.forEach(p => {
-      const playerColor = getColorForId(p.id);
+      const isAlive = p.alive !== false;
+      const playerColor = isAlive ? getColorForId(p.id) : "rgba(140,140,140,0.6)";
 
+      ctx.globalAlpha = isAlive ? 1 : 0.4;
       ctx.fillStyle = playerColor;
       ctx.beginPath();
       ctx.arc(p.x, p.y, 25, 0, Math.PI * 2);
       ctx.fill();
-      
+
       // Outline, highlight this player
       ctx.strokeStyle = p.id === localPlayerId ? "white" : "rgba(0,0,0,0.5)";
       ctx.lineWidth = p.id === localPlayerId ? 4 : 2;
@@ -137,24 +139,29 @@ export class GameRenderer {
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       const nameY = Math.round(p.y - 35);
-      ctx.fillText(p.name || `Player ${p.id}`, Math.round(p.x), nameY);
+      const label = isAlive ? (p.name || `Player ${p.id}`) : `${p.name || `Player ${p.id}`} (down)`;
+      ctx.fillText(label, Math.round(p.x), nameY);
+      ctx.globalAlpha = 1;
     });
 
     // --- RESTORE CAMERA ---
     ctx.restore();
 
     // 7. Leaderboard (top of screen)
-    this.drawLeaderboard(worldState.players, worldState.eliminated || [], localPlayerId, width);
+    this.drawLeaderboard(worldState.players, localPlayerId, width);
 
     // 8. Sprint meter (local player only)
     this.drawSprintMeter(me, width, height);
 
     // 9. Draw HUD (Heads Up Display - Drawn fixed to the screen)
     this.drawJoystickHUD(localInput, trackingCenter, width, height);
+
+    // 10. Death overlay (local player only)
+    this.drawDeathOverlay(me, width, height);
   }
 
   drawSprintMeter(localPlayer, width, height) {
-    if (!localPlayer) return;
+    if (!localPlayer || localPlayer.alive === false) return;
     const ctx = this.ctx;
     const stamina = Math.max(0, Math.min(100, localPlayer.stamina ?? 100));
     const barWidth = 160;
@@ -193,7 +200,7 @@ export class GameRenderer {
     }
   }
 
-  drawLeaderboard(players, eliminated, localPlayerId, width) {
+  drawLeaderboard(players, localPlayerId, width) {
     const ctx = this.ctx;
     const padding = 12;
     const rowHeight = 22;
@@ -201,7 +208,7 @@ export class GameRenderer {
     ctx.font = `600 ${fontSize}px system-ui, -apple-system, sans-serif`;
     ctx.textBaseline = "middle";
 
-    const aliveEntries = (players || []).map(p => ({ id: p.id, name: p.name || `Player ${p.id}`, score: p.score ?? 0, alive: true }));
+    const aliveEntries = (players || []).map(p => ({ id: p.id, name: p.name || `Player ${p.id}`, score: p.score ?? 0, alive: p.alive !== false }));
     aliveEntries.sort((a, b) => b.score - a.score);
     const entries = [...aliveEntries];
     if (entries.length === 0) return;
@@ -236,13 +243,32 @@ export class GameRenderer {
       } else {
         ctx.fillStyle = isMe ? "rgba(255, 100, 100, 0.9)" : "rgba(160, 160, 160, 0.9)";
       }
-      const label = entry.alive ? entry.name : `${entry.name} (out)`;
+      const label = entry.alive ? entry.name : `${entry.name} (down)`;
       const pts = Math.round(entry.score);
       ctx.textAlign = "left";
       ctx.fillText(label, Math.round(x + padding), Math.round(yy));
       ctx.textAlign = "right";
       ctx.fillText(`${pts} pts`, Math.round(x + boxWidth - padding), Math.round(yy));
     });
+  }
+
+  drawDeathOverlay(localPlayer, width, height) {
+    if (!localPlayer || localPlayer.alive !== false) return;
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.fillStyle = "rgba(10, 10, 14, 0.55)";
+    ctx.fillRect(0, 0, width, height);
+
+    const secs = Math.max(0, (localPlayer.respawnInMs ?? 0) / 1000);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ff5252";
+    ctx.font = "700 32px system-ui, -apple-system, sans-serif";
+    ctx.fillText("You were popped", width / 2, height / 2 - 20);
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.font = "600 18px system-ui, -apple-system, sans-serif";
+    ctx.fillText(`Respawning in ${secs.toFixed(1)}s`, width / 2, height / 2 + 20);
+    ctx.restore();
   }
 
   drawMap(config) {

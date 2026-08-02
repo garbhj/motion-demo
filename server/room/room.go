@@ -2,12 +2,17 @@ package room
 
 import (
 	"fmt"
-	"math"
+	"sync/atomic"
 	"time"
 
 	"motion/game"
 	"motion/protocol"
 )
+
+// DefaultRoomCapacity is the max players per room. Kept as a single tunable
+// constant: at 2000x2000 with orb-based melee, this keeps arenas feeling
+// busy without blowing up per-tick collision cost or the 20Hz state broadcast.
+const DefaultRoomCapacity = 16
 
 type Room struct {
 	Inbox          chan any
@@ -18,9 +23,12 @@ type Room struct {
 	latestInputs   map[string]game.Input
 	nextID         int
 	quit           chan struct{}
+	numPlayers     int32 // atomic mirror of len(clients); safe to read cross-goroutine
 
-	Code    string            // room code (e.g. "ABC123")
-	OnEmpty func(code string) // called when last player leaves
+	Code       string            // room code (e.g. "ABC123")
+	Public     bool              // true = eligible for auto-matchmaking; false = private/code-only
+	MaxPlayers int               // capacity; joins beyond this are rejected
+	OnEmpty    func(code string) // called when last player leaves
 }
 
 func New() *Room {
@@ -40,6 +48,7 @@ func New() *Room {
 		latestInputs: make(map[string]game.Input),
 		nextID:       1,
 		quit:         make(chan struct{}),
+		MaxPlayers:   DefaultRoomCapacity,
 	}
 }
 
@@ -47,9 +56,11 @@ func (r *Room) Stop() {
 	close(r.quit)
 }
 
-// NumPlayers returns the current number of connected clients.
+// NumPlayers returns the current number of connected clients. Safe to call
+// from any goroutine (e.g. the Manager, while the Room's own goroutine
+// mutates clients concurrently).
 func (r *Room) NumPlayers() int {
-	return len(r.clients)
+	return int(atomic.LoadInt32(&r.numPlayers))
 }
 
 func (r *Room) Run() {
@@ -66,6 +77,7 @@ func (r *Room) Run() {
 			game.Step(&r.state, r.latestInputs)
 			if r.state.Tick%r.broadcastEvery == 0 {
 				r.broadcastState()
+				r.state.Kills = r.state.Kills[:0]
 			}
 		}
 	}
@@ -74,36 +86,29 @@ func (r *Room) Run() {
 func (r *Room) handleCommand(cmd any) {
 	switch c := cmd.(type) {
 	case Join:
+		if len(r.clients) >= r.MaxPlayers {
+			c.Reply <- JoinResult{Full: true}
+			return
+		}
 		idNum := r.nextID
 		playerID := fmt.Sprintf("p%d", idNum)
 		r.nextID++
 		r.clients[playerID] = c.Conn
+		atomic.AddInt32(&r.numPlayers, 1)
 		r.latestInputs[playerID] = game.Input{}
 		if _, ok := r.state.Players[playerID]; !ok {
-			spawn := float64(100 * idNum)
+			px, py := game.SpawnPoint()
 			name := c.Name
 			if name == "" {
 				name = fmt.Sprintf("Player %d", idNum)
 			}
-			r.state.Players[playerID] = &game.Player{ID: playerID, Name: name, X: spawn, Y: spawn, Stamina: game.StaminaMax, Score: 0}
+			r.state.Players[playerID] = &game.Player{
+				ID: playerID, Name: name, X: px, Y: py,
+				Stamina: game.StaminaMax, Score: 0, Alive: true,
+			}
 		}
 		if _, ok := r.state.Orbs[playerID]; !ok {
-			px := r.state.Players[playerID].X
-			py := r.state.Players[playerID].Y
-			angle := 0.0
-			ox := px + math.Cos(angle)*game.OrbOrbitRadius
-			oy := py + math.Sin(angle)*game.OrbOrbitRadius
-			r.state.Orbs[playerID] = &game.Orb{
-				ID:            playerID + "_o",
-				OwnerID:       playerID,
-				X:             ox,
-				Y:             oy,
-				Angle:         angle,
-				Size:          game.OrbBaseSize,
-				Mode:          game.OrbOrbit,
-				ShotTicksLeft: 0,
-				CooldownTicks: 0,
-			}
+			r.state.Orbs[playerID] = game.NewOrb(playerID, r.state.Players[playerID])
 		}
 		c.Reply <- JoinResult{PlayerID: playerID}
 	case Input:
@@ -125,6 +130,7 @@ func (r *Room) handleLeave(playerID string) {
 		r.sendStateTo(c)
 		_ = c.Close()
 		delete(r.clients, playerID)
+		atomic.AddInt32(&r.numPlayers, -1)
 	}
 	if len(r.clients) == 0 && r.OnEmpty != nil && r.Code != "" {
 		r.OnEmpty(r.Code)
@@ -134,8 +140,9 @@ func (r *Room) handleLeave(playerID string) {
 func (r *Room) removePlayer(playerID string) {
 	if c, ok := r.clients[playerID]; ok {
 		_ = c.Close()
+		delete(r.clients, playerID)
+		atomic.AddInt32(&r.numPlayers, -1)
 	}
-	delete(r.clients, playerID)
 	delete(r.latestInputs, playerID)
 	delete(r.state.Players, playerID)
 	delete(r.state.Orbs, playerID)
@@ -143,14 +150,11 @@ func (r *Room) removePlayer(playerID string) {
 
 func (r *Room) broadcastState() {
 	snapshot := r.buildSnapshot()
-	b, err := protocol.Encode(protocol.MsgState, snapshot)
-	if err != nil {
-		return
-	}
+	b := protocol.EncodeStateBinary(snapshot)
 
 	var failed []string
 	for id, c := range r.clients {
-		if err := c.Send(b); err != nil {
+		if err := c.SendBinary(b); err != nil {
 			failed = append(failed, id)
 		}
 	}
@@ -161,11 +165,8 @@ func (r *Room) broadcastState() {
 
 func (r *Room) sendStateTo(c Conn) {
 	snapshot := r.buildSnapshot()
-	b, err := protocol.Encode(protocol.MsgState, snapshot)
-	if err != nil {
-		return
-	}
-	_ = c.Send(b)
+	b := protocol.EncodeStateBinary(snapshot)
+	_ = c.SendBinary(b)
 }
 
 func (r *Room) buildSnapshot() protocol.State {
@@ -173,21 +174,35 @@ func (r *Room) buildSnapshot() protocol.State {
 		Tick:    r.state.Tick,
 		Players: make([]protocol.PlayerSnapshot, 0, len(r.state.Players)),
 		Orbs:    make([]protocol.OrbSnapshot, 0, len(r.state.Orbs)),
-		// Eliminated: make([]protocol.EliminatedSnapshot, 0, len(r.state.Eliminated)),
+		Kills:   make([]protocol.KillSnapshot, 0, len(r.state.Kills)),
 	}
 	for id, p := range r.state.Players {
-		snapshot.Players = append(snapshot.Players, protocol.PlayerSnapshot{
+		ps := protocol.PlayerSnapshot{
 			ID:      id,
 			Name:    p.Name,
 			X:       p.X,
 			Y:       p.Y,
 			Stamina: p.Stamina,
 			Score:   p.Score,
+			Alive:   p.Alive,
+		}
+		if !p.Alive {
+			remaining := p.RespawnAtTick - r.state.Tick
+			if remaining < 0 {
+				remaining = 0
+			}
+			ps.RespawnInMs = remaining * 1000 / protocol.SimTickHz
+		}
+		snapshot.Players = append(snapshot.Players, ps)
+	}
+	for _, k := range r.state.Kills {
+		snapshot.Kills = append(snapshot.Kills, protocol.KillSnapshot{
+			KillerID:   k.KillerID,
+			KillerName: k.KillerName,
+			VictimID:   k.VictimID,
+			VictimName: k.VictimName,
 		})
 	}
-	// for _, e := range r.state.Eliminated {
-	// 	snapshot.Eliminated = append(snapshot.Eliminated, protocol.EliminatedSnapshot{ID: e.ID, Name: e.Name, Score: e.Score})
-	// }
 	for _, o := range r.state.Orbs {
 		snapshot.Orbs = append(snapshot.Orbs, protocol.OrbSnapshot{
 			ID:      o.ID,

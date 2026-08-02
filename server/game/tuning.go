@@ -28,4 +28,7 @@ const (
 	OrbReturnSnapDist      = 20.0  // snap when close so return→orbit transition is smooth
 	OrbDampingDiv          = 1.025 // gentler so shot trail feels smoother
 	OrbCooldownTicks       = 20
+	RespawnDelayTicks      = 120   // 3s @ 40Hz — how long a killed player stays dead
+	SpawnMargin            = 100.0 // keeps spawn points off the map walls
+	SpawnMaxAttempts       = 32    // bounded retries for obstacle-clear spawn sampling
 )

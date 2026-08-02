@@ -14,6 +14,12 @@ const mainMenu = document.getElementById("menu_screen");
 const inGameUi = document.getElementById("game_ui_layer");
 const enableCameraBtn = document.getElementById("enableCameraBtn");
 const playBtn = document.getElementById("playBtn");
+const createRoomBtn = document.getElementById("createRoomBtn");
+const joinCodeGroup = document.getElementById("joinCodeGroup");
+const joinCodeInput = document.getElementById("joinCodeInput");
+const joinRoomBtn = document.getElementById("joinRoomBtn");
+const roomCodeLabel = document.getElementById("roomCodeLabel");
+const killFeedEl = document.getElementById("killFeed");
 const playerNameInput = document.getElementById("playerName");
 
 const infoBtn = document.getElementById("infoBtn");
@@ -32,6 +38,30 @@ if (infoBtn && infoModal && closeInfoBtn) {
 const tracker = new HandTracker();
 const network = new NetworkManager();
 const renderer = new GameRenderer(gameCanvas);
+
+network.onError = (code, message) => {
+  alert(message || "Connection error, please try again.");
+  exitGame();
+};
+network.onWelcome = (playerId, roomCode) => {
+  if (roomCodeLabel) roomCodeLabel.textContent = roomCode ? `Room ${roomCode}` : "";
+};
+network.onKill = (killerName, victimName) => {
+  pushKillFeedEntry(killerName, victimName);
+};
+
+function pushKillFeedEntry(killerName, victimName) {
+  if (!killFeedEl) return;
+  const entry = document.createElement("div");
+  entry.className = "kill-feed-entry";
+  entry.textContent = `${killerName} popped ${victimName}`;
+  killFeedEl.appendChild(entry);
+  while (killFeedEl.children.length > 5) {
+    killFeedEl.removeChild(killFeedEl.firstChild);
+  }
+  setTimeout(() => entry.classList.add("fade-out"), 2000);
+  setTimeout(() => entry.remove(), 2400);
+}
 
 // State
 let localInput = { x: 0.5, y: 0.5, gesture: GESTURES.OPEN }; 
@@ -91,6 +121,8 @@ async function boot() {
 
   enableCameraBtn.addEventListener("click", toggleCamera);
   if (playBtn) playBtn.addEventListener("click", onPlay);
+  if (createRoomBtn) createRoomBtn.addEventListener("click", onCreateRoom);
+  if (joinRoomBtn) joinRoomBtn.addEventListener("click", onJoinCode);
   const togglePipBtn = document.getElementById("togglePipBtn");
   if (togglePipBtn) {
     togglePipBtn.addEventListener("click", () => pipContainer.classList.toggle("minimized"));
@@ -124,6 +156,9 @@ async function startCamera() {
     enableCameraBtn.classList.add("active-state");
     enableCameraBtn.disabled = false;
     if (playBtn) playBtn.classList.remove("hidden");
+    if (createRoomBtn) createRoomBtn.classList.remove("hidden");
+    if (joinCodeGroup) joinCodeGroup.classList.remove("hidden");
+    if (joinRoomBtn) joinRoomBtn.classList.remove("hidden");
     trackCameraLoop();
   });
 }
@@ -139,18 +174,16 @@ async function stopCamera() {
   enableCameraBtn.innerHTML = `<span class="btn-text">Initialize Camera</span><span class="btn-sub">Required to play</span>`;
   enableCameraBtn.classList.remove("active-state");
   if (playBtn) playBtn.classList.add("hidden");
+  if (createRoomBtn) createRoomBtn.classList.add("hidden");
+  if (joinCodeGroup) joinCodeGroup.classList.add("hidden");
+  if (joinRoomBtn) joinRoomBtn.classList.add("hidden");
 
   pipContainer.classList.add("hidden");
   debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
 }
 
-function onPlay() {
-  if (!isCameraActive) {
-    alert("Please initialize the camera first to play.");
-    return;
-  }
-  const name = playerNameInput.value.trim() || "Anonymous";
-  if (!network.joinGame(name)) return;
+function startGame(name, roomCode) {
+  if (!network.joinGame(name, roomCode)) return;
 
   mainMenu.classList.add("hidden");
   inGameUi.classList.remove("hidden");
@@ -161,6 +194,42 @@ function onPlay() {
   renderFrameId = requestAnimationFrame(renderLoop);
 }
 
+function onPlay() {
+  if (!isCameraActive) {
+    alert("Please initialize the camera first to play.");
+    return;
+  }
+  startGame(playerNameInput.value.trim() || "Anonymous", null);
+}
+
+async function onCreateRoom() {
+  if (!isCameraActive) {
+    alert("Please initialize the camera first to play.");
+    return;
+  }
+  const name = playerNameInput.value.trim() || "Anonymous";
+  try {
+    const code = await network.createPrivateRoom();
+    startGame(name, code);
+  } catch (err) {
+    console.error("Create room failed:", err);
+    alert("Couldn't create a room right now, please try again.");
+  }
+}
+
+function onJoinCode() {
+  if (!isCameraActive) {
+    alert("Please initialize the camera first to play.");
+    return;
+  }
+  const code = joinCodeInput.value.trim().toUpperCase();
+  if (!code) {
+    alert("Enter a room code to join.");
+    return;
+  }
+  startGame(playerNameInput.value.trim() || "Anonymous", code);
+}
+
 function exitGame() {
   isPlaying = false;
   clearInterval(networkInterval);
@@ -168,6 +237,8 @@ function exitGame() {
 
   mainMenu.classList.remove("hidden");
   inGameUi.classList.add("hidden");
+  if (roomCodeLabel) roomCodeLabel.textContent = "";
+  if (killFeedEl) killFeedEl.innerHTML = "";
 
   const ctx = gameCanvas.getContext("2d");
   ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);

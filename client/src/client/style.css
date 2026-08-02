@@ -385,6 +385,41 @@ body, html {
 .danger-btn { border-color: var(--danger); color: var(--danger); }
 .danger-btn:hover { background: var(--danger); color: white; }
 
+.room-code-label {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--teal);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(45, 212, 191, 0.25);
+  border-radius: 10px;
+}
+.room-code-label:empty { display: none; }
+
+.kill-feed {
+  position: absolute; top: 20px; right: 20px;
+  display: flex; flex-direction: column; gap: 6px;
+  align-items: flex-end;
+  max-width: 280px;
+  pointer-events: none;
+}
+.kill-feed-entry {
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-main);
+  background: rgba(20, 27, 36, 0.75);
+  border: 1px solid rgba(255, 82, 82, 0.35);
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+  opacity: 1;
+  transition: opacity 0.4s ease;
+}
+.kill-feed-entry.fade-out { opacity: 0; }
+
 /* --- PiP HUD --- */
 #pip_container {
   position: fixed;

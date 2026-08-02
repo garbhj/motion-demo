@@ -2,7 +2,9 @@ package network
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"sync"
 
@@ -28,19 +30,43 @@ func (w *WSConn) Send(b []byte) error {
 	return w.c.WriteMessage(websocket.TextMessage, b)
 }
 
+func (w *WSConn) SendBinary(b []byte) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.c.WriteMessage(websocket.BinaryMessage, b)
+}
+
 func (w *WSConn) Close() error {
 	return w.c.Close()
 }
 
 var manager *room.Manager
 
-func wsHandler(w http.ResponseWriter, r *http.Request) {
-	roomCode := r.URL.Query().Get("room")
-	if roomCode == "" {
-		log.Printf("ws: 400 missing room code (path=%q, query=%q)", r.URL.Path, r.URL.RawQuery)
-		http.Error(w, "missing room code", http.StatusBadRequest)
+// sendError encodes and sends a MsgError envelope. WebSocket handshakes
+// can't carry a failure body to the browser, so errors after upgrade are
+// sent as a real protocol message instead.
+func sendError(ws *WSConn, code, message string) {
+	b, err := protocol.Encode(protocol.MsgError, protocol.Error{Code: code, Message: message})
+	if err != nil {
 		return
 	}
+	_ = ws.Send(b)
+}
+
+// joinRoom sends a Join command to gameRoom and waits for the reply.
+func joinRoom(gameRoom *room.Room, ws *WSConn, name string) (room.JoinResult, error) {
+	reply := make(chan room.JoinResult, 1)
+	gameRoom.Inbox <- room.Join{Conn: ws, Name: name, Reply: reply}
+	res := <-reply
+	if res.Full {
+		return res, fmt.Errorf("room full")
+	}
+	return res, nil
+}
+
+func wsHandler(w http.ResponseWriter, r *http.Request) {
+	roomParam := r.URL.Query().Get("room")
+	isPublic := roomParam == "" || roomParam == "auto"
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -49,18 +75,30 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	gameRoom := manager.GetOrCreateRoom(roomCode)
-	if gameRoom == nil {
-		return
+	if tcpConn, ok := conn.NetConn().(*net.TCPConn); ok {
+		_ = tcpConn.SetNoDelay(true)
 	}
 
 	ws := &WSConn{c: conn}
+
+	var gameRoom *room.Room
+	if isPublic {
+		gameRoom = manager.FindOrCreatePublicRoom()
+	} else {
+		var ok bool
+		gameRoom, ok = manager.GetRoom(roomParam)
+		if !ok {
+			sendError(ws, "room_not_found", "That room code doesn't exist or has ended.")
+			return
+		}
+	}
+
 	var playerID string
 	joined := false
 
 	// Msg loop per connection
 	for {
-		_, msg, err := conn.ReadMessage()
+		messageType, msg, err := conn.ReadMessage()
 		if err != nil {
 			log.Println("read:", err)
 			if joined {
@@ -69,52 +107,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// 1) Decode envelope (this creates env)
-		env, err := protocol.DecodeEnvelope(msg)
-		if err != nil {
-			log.Printf("bad envelope: %v", err)
-			continue
-		}
-
-		// 2) Switch on message type
-		switch env.T {
-
-		case protocol.MsgHello:
-			hello, err := protocol.DecodePayload[protocol.Hello](env)
+		if messageType == websocket.BinaryMessage {
+			if !joined || len(msg) == 0 || msg[0] != protocol.BinMsgInput {
+				continue
+			}
+			inp, err := protocol.DecodeInputBinary(msg)
 			if err != nil {
-				log.Printf("bad hello payload: %v", err)
-				continue
-			}
-			if joined {
-				continue
-			}
-
-			reply := make(chan room.JoinResult, 1)
-			gameRoom.Inbox <- room.Join{Conn: ws, Name: hello.Name, Reply: reply}
-			res := <-reply
-			playerID = res.PlayerID
-			joined = true
-
-			b, err := protocol.Encode(protocol.MsgWelcome, protocol.Welcome{
-				PlayerID: playerID,
-				TickHz:   protocol.SimTickHz,
-			})
-			if err != nil {
-				log.Printf("encode welcome: %v", err)
-				continue
-			}
-			if err := ws.Send(b); err != nil {
-				log.Printf("write welcome: %v", err)
-				return
-			}
-
-		case protocol.MsgInput:
-			if !joined {
-				continue
-			}
-			inp, err := protocol.DecodePayload[protocol.Input](env)
-			if err != nil {
-				log.Printf("bad input payload: %v", err)
+				log.Printf("bad binary input: %v", err)
 				continue
 			}
 			cmd := room.Input{
@@ -129,6 +128,67 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			select {
 			case gameRoom.Inbox <- cmd:
 			default:
+			}
+			continue
+		}
+
+		// Text path: JSON control messages (hello only — input moved to binary)
+		env, err := protocol.DecodeEnvelope(msg)
+		if err != nil {
+			log.Printf("bad envelope: %v", err)
+			continue
+		}
+
+		switch env.T {
+
+		case protocol.MsgHello:
+			hello, err := protocol.DecodePayload[protocol.Hello](env)
+			if err != nil {
+				log.Printf("bad hello payload: %v", err)
+				continue
+			}
+			if joined {
+				continue
+			}
+
+			res, joinErr := joinRoom(gameRoom, ws, hello.Name)
+			if joinErr != nil && isPublic {
+				for attempt := 0; attempt < 3 && joinErr != nil; attempt++ {
+					gameRoom = manager.FindOrCreatePublicRoom()
+					res, joinErr = joinRoom(gameRoom, ws, hello.Name)
+				}
+			}
+			if joinErr != nil {
+				msg := "That room is full."
+				if isPublic {
+					msg = "Couldn't find an open arena, please try again."
+				}
+				sendError(ws, "room_full", msg)
+				return
+			}
+			playerID = res.PlayerID
+			joined = true
+
+			obstacleSnapshots := make([]protocol.ObstacleSnapshot, 0, len(game.Obstacles))
+			for _, o := range game.Obstacles {
+				obstacleSnapshots = append(obstacleSnapshots, protocol.ObstacleSnapshot{
+					X: o.X, Y: o.Y, Width: o.Width, Height: o.Height,
+				})
+			}
+
+			b, err := protocol.Encode(protocol.MsgWelcome, protocol.Welcome{
+				PlayerID:  playerID,
+				TickHz:    protocol.SimTickHz,
+				RoomCode:  gameRoom.Code,
+				Obstacles: obstacleSnapshots,
+			})
+			if err != nil {
+				log.Printf("encode welcome: %v", err)
+				continue
+			}
+			if err := ws.Send(b); err != nil {
+				log.Printf("write welcome: %v", err)
+				return
 			}
 
 		default:
