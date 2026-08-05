@@ -1,39 +1,102 @@
-import { HandLandmarker, FilesetResolver, DrawingUtils } from "@mediapipe/tasks-vision";
+import { HandLandmarker, DrawingUtils } from "@mediapipe/tasks-vision";
+import HandWorker from "./handWorker.js?worker";
 
+// Initializes and manages a handWorker
 export class HandTracker {
   constructor() {
-    this.handLandmarker = null;
     this.drawingUtils = null;
+    this.worker = null;
+    this._latestLandmarks = null;
+    this._latestTimestamp = 0;
+    this._processor = null;
+    this._reader = null;
+    this._track = null;
+    this._running = false;
+    this._workerBusy = false;
+    // Bumped on every startInference(). Stale worker results from a prior
+    // session are dropped so they can't falsely clear _workerBusy for the new
+    // one — important because stopInference() can't wait for an in-flight
+    // detectForVideo() that's already been posted to the worker.
+    this._session = 0;
   }
 
-  // 1. Download and initialize the AI Model
   async initialize() {
-    const vision = await FilesetResolver.forVisionTasks(
-      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
-    );
-    
-    this.handLandmarker = await HandLandmarker.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-        delegate: "GPU" // Use hardware acceleration
-      },
-      runningMode: "VIDEO",
-      numHands: 1 // Only track 1 hand for game simplicity
+    this.worker = new HandWorker();
+
+    return new Promise((resolve, reject) => {
+      // onmessage outlives the promise
+      this.worker.onmessage = (e) => {
+        if (e.data.type === "ready") {
+          resolve();
+        } else if (e.data.type === "error") {
+          console.warn("hand worker error:", e.data.message);
+          this._workerBusy = false;
+          reject(new Error(e.data.message));
+        } else if (e.data.type === "result") {
+          if (e.data.session !== this._session) return;
+          this._latestLandmarks = e.data.landmarks[0] || null;
+          this._latestTimestamp = e.data.timestamp;
+          this._workerBusy = false;
+        }
+      };
+      this.worker.postMessage({ type: "init" })
     });
   }
 
-  // 2. Setup the Canvas drawing utilities
   setCanvas(canvasCtx) {
     this.drawingUtils = new DrawingUtils(canvasCtx);
   }
 
-  // 3. Process a single frame of video
-  detect(videoElement, timestampMs) {
-    if (!this.handLandmarker) return null;
-    return this.handLandmarker.detectForVideo(videoElement, timestampMs);
+  startInference(stream) {
+    this._session++;
+    this._workerBusy = false;
+    this._track = stream.getVideoTracks()[0].clone();
+    this._processor = new MediaStreamTrackProcessor({ track: this._track });
+    this._reader = this._processor.readable.getReader();
+    this._running = true;
+    this._pump();
   }
 
-  // 4. Draw the raw AI skeleton (Good for debugging)
+  async _pump() {
+    while (this._running) {
+      const { value: frame, done } = await this._reader.read();
+      if (done) break;
+      // Drop frames if MediaPipe worker lags.
+      if (this._workerBusy) {
+        console.warn("Dropped Frame");
+        frame.close();
+      } else {
+        this._workerBusy = true;
+        this.worker.postMessage({ type: "frame", session: this._session, frame }, [frame]);
+      }
+    }
+    try { this._reader.releaseLock(); } catch {
+
+    }
+  }
+
+  stopInference() {
+    this._running = false;
+    if (this._track) {
+      this._track.stop();
+      this._track = null;
+    }
+    if (this._reader) {
+      try {
+        this._reader.cancel();
+      } catch {};
+      this._reader = null;
+    }
+  }
+
+  getLatestLandmarks() {
+    return this._latestLandmarks;
+  }
+
+  getLatestTimestamp() {
+    return this._latestTimestamp;
+  }
+  
   drawDebugMesh(landmarks) {
     if (!this.drawingUtils) return;
     this.drawingUtils.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, {

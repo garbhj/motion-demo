@@ -14,5 +14,10 @@ export default defineConfig({
   server: {
     port: 3000,
     open: true // Opens browser automatically
-  }
+  },
+  
+  // optimizeDeps: {
+  //   exclude: ["@mediapipe/tasks-vision"],
+  // },
+
 });

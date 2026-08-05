@@ -1,4 +1,4 @@
-import { GESTURES } from "./HandHeuristics.js";
+import { GESTURES } from "./handHeuristics.js";
 
 // Helpers
 // Generates a distinct color for any given integer ID using the Golden Ratio

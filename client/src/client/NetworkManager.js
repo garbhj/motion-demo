@@ -83,10 +83,13 @@ export class NetworkManager {
     this.pendingInput = { ax: 0, ay: 0, boost: false };
     this.serverTickHz = null;
     this.debug = false;
+    // Render this many ms behind the newest snapshot. Must be >= the
+    // broadcast interval (50ms @ 20Hz) so the lerp "now" always falls
+    // between two received snapshots.
+    this.interpDelayMs = 60;
     this.snapA = null;
     this.snapB = null;
-    this.interpDelayMs = 100;
-    this.predicted = null; // {x,y,vx,vy,stamina} for the local player only
+    this.predicted = null;
 
     // Set VITE_WS_URL in Vercel (e.g. wss://xxx.ngrok-free.app/ws).
     const env = (typeof import.meta !== "undefined" && import.meta.env) ? import.meta.env : {};
@@ -180,9 +183,8 @@ export class NetworkManager {
     const view = new DataView(buffer);
     if (view.byteLength < 1 || view.getUint8(0) !== BIN_MSG_STATE) return;
     const state = decodeStateBinary(view);
-    const now = performance.now();
     this.snapA = this.snapB;
-    this.snapB = { t: now, state };
+    this.snapB = { t: performance.now(), state };
     this.latestServerState = state;
     this.reconcile(state);
     if (state.kills.length && typeof this.onKill === "function") {
@@ -312,12 +314,12 @@ export class NetworkManager {
     } else if (!A || !A.state) {
       world = this.buildWorldFromSnapshot(B.state);
     } else {
-      const now = performance.now();
-      const target = now - this.interpDelayMs;
+      const target = performance.now() - this.interpDelayMs;
       const dt = (B.t - A.t) || 1;
       let alpha = (target - A.t) / dt;
       if (alpha < 0) alpha = 0;
       if (alpha > 1) alpha = 1;
+      console.log(alpha.toFixed(2));
       world = this.interpolateWorld(A.state, B.state, alpha);
     }
     this.applyPredictionOverride(world);
@@ -329,6 +331,14 @@ export class NetworkManager {
   // + interpolation buffer. Remote players are untouched (can't predict
   // someone else's input).
   applyPredictionOverride(world) {
+    // Temporarily disabled: the local `predicted` is advanced by the 40Hz
+    // accumulator in main.js while interpolation runs at 60Hz per rAF, and
+    // the two clocks rarely align — so the local player and its own orb
+    // (whose position is lerp-driven) move at different rates, producing
+    // a visible 3-frame stagger pattern. With this disabled, the local
+    // player interpolates like everyone else, at the cost of ~interpDelayMs
+    // of added input latency. Re-enable by deleting this return.
+    return;
     if (!this.predicted || !this.myId) return;
     const i = world.players.findIndex(p => String(p.id) === String(this.myId));
     if (i === -1) return;

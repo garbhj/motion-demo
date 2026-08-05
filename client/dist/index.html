@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Motion.io</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
-  <script type="module" crossorigin src="/assets/index-PnjIcZ_Z.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-Do6834jw.css">
+  <script type="module" crossorigin src="/assets/index-uwx68hHf.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-CRvDADnB.css">
 </head>
 <body>
 
@@ -44,8 +44,10 @@
   <div id="menu_screen" class="overlay">
     <div class="menu-box">
       <div class="logo-area">
-        <img src="/assets/Logo-B4XwWyYj.png" alt="Motion.io" class="logo-img">
-        <p class="subtitle">Webcam Gesture Control</p>
+        <div class="logo-container">
+          <img src="/assets/Logo-DHgp9EI5.png" alt="Bubble Brawl Poppers" class="logo-img">
+        </div>
+        <p class="subtitle">Play with your hands. Pop your rivals.</p>
       </div>
 
       <div class="input-group">
@@ -53,21 +55,21 @@
         <label for="playerName">Enter Nickname</label>
       </div>
 
-      <div class="server-list-section">
-        <div class="server-list-header">
-          <span class="server-list-title">Lobbies</span>
-          <button type="button" id="refreshRoomsBtn" class="refresh-btn" title="Refresh">↻</button>
-        </div>
-        <ul id="roomList" class="room-list"></ul>
-        <p id="roomListEmpty" class="room-list-empty hidden">No lobbies yet. Create one below.</p>
-        <button type="button" id="createLobbyBtn" class="btn create-lobby-btn">+ Create lobby</button>
-      </div>
-
       <div class="action-area">
         <button id="enableCameraBtn" class="btn primary-btn">
           <span class="btn-text">Initialize Camera</span>
           <span class="btn-sub">Required to play</span>
         </button>
+        <button type="button" id="playBtn" class="btn primary-btn hidden">
+          <span class="btn-text">Play</span>
+          <span class="btn-sub">Join a public arena</span>
+        </button>
+        <button type="button" id="createRoomBtn" class="btn sm-btn hidden">Create Private Room</button>
+        <div class="input-group hidden" id="joinCodeGroup">
+          <input type="text" id="joinCodeInput" placeholder=" " maxlength="6" autocomplete="off">
+          <label for="joinCodeInput">Room Code</label>
+        </div>
+        <button type="button" id="joinRoomBtn" class="btn sm-btn hidden">Join Room</button>
       </div>
 
       <div class="footer-links">
@@ -79,9 +81,11 @@
   <!-- In-Game UI Layer -->
   <div id="game_ui_layer" class="hidden ui-layer">
     <div class="top-bar">
+      <span id="roomCodeLabel" class="room-code-label"></span>
       <button id="recenterBtn" class="btn sm-btn">Recenter (C)</button>
       <button id="exitBtn" class="btn sm-btn danger-btn">Exit</button>
     </div>
+    <div id="killFeed" class="kill-feed"></div>
   </div>
 
   <!-- HUD / PiP Container -->

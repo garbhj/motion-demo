@@ -1,7 +1,7 @@
-import { HandTracker } from "./HandTracker.js";
-import { processHandData, GESTURES } from "./HandHeuristics.js";
-import { NetworkManager } from "./NetworkManager.js";
-import { GameRenderer } from "./Renderer.js";
+import { HandTracker } from "./handTracker.js";
+import { processHandData, GESTURES } from "./handHeuristics.js";
+import { NetworkManager } from "./networkManager.js";
+import { GameRenderer } from "./renderer.js";
 
 // DOM Elements
 const gameCanvas = document.getElementById("game_canvas");
@@ -71,8 +71,14 @@ let worldState = null;
 let lastVideoTime = -1;
 let isCameraActive = false;
 let isPlaying = false;
-let networkInterval = null;
-let renderFrameId = null; 
+let renderFrameId = null;
+
+// Single-rAF scheduler state. Drives fixed-timestep input/prediction
+// (40Hz, matching the server tick) and renders every frame. Replaces the
+// old setInterval(networkLoop, 25) which fought vsync and caused jitter.
+const NET_STEP_MS = 1000 / 40;
+let lastRafTime = null;
+let netAccumulatorMs = 0;
 
 // Controls
 const exitBtn = document.getElementById("exitBtn");
@@ -144,6 +150,7 @@ async function startCamera() {
 
   const stream = await navigator.mediaDevices.getUserMedia({ video: true });
   video.srcObject = stream;
+  tracker.startInference(stream);
 
   video.addEventListener("loadeddata", () => {
     debugCanvas.width = video.videoWidth;
@@ -169,6 +176,7 @@ async function stopCamera() {
     video.srcObject.getTracks().forEach(track => track.stop());
     video.srcObject = null;
   }
+  tracker.stopInference();
 
   enableCameraBtn.disabled = false;
   enableCameraBtn.innerHTML = `<span class="btn-text">Initialize Camera</span><span class="btn-sub">Required to play</span>`;
@@ -190,7 +198,8 @@ function startGame(name, roomCode) {
   isPlaying = true;
   trackingCenter = { x: 0.5, y: 0.5 };
 
-  networkInterval = setInterval(networkLoop, 1000 / 40);
+  lastRafTime = null;
+  netAccumulatorMs = 0;
   renderFrameId = requestAnimationFrame(renderLoop);
 }
 
@@ -232,8 +241,8 @@ function onJoinCode() {
 
 function exitGame() {
   isPlaying = false;
-  clearInterval(networkInterval);
   if (renderFrameId) cancelAnimationFrame(renderFrameId);
+  renderFrameId = null;
 
   mainMenu.classList.remove("hidden");
   inGameUi.classList.add("hidden");
@@ -247,30 +256,21 @@ function exitGame() {
 // --- LOOP 1: Input Processing (Runs on camera frames) ---
 function trackCameraLoop() {
   if (!isCameraActive) return;
-
-  if (video.currentTime !== lastVideoTime) {  // Note: using explicit variable
-    lastVideoTime = video.currentTime; 
-
-    const results = tracker.detect(video, performance.now());
-
-    debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
+  const rawHand = tracker.getLatestLandmarks();
+  debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
+  
+  if (rawHand) {
+    const handState = processHandData(rawHand);
     
-    if (results?.landmarks?.length > 0) {
-      const rawHand = results.landmarks[0];
-      const handState = processHandData(rawHand);
-      
-      // Update local logical state (Un-mirrored, used for game logic)
-      localInput.x = handState.position.x;
-      localInput.y = handState.position.y;
-      localInput.gesture = handState.gesture;
+    // NOT mirrored here
+    localInput.x = handState.position.x;
+    localInput.y = handState.position.y;
+    localInput.gesture = handState.gesture;
 
-      // 1. Draw raw AI skeleton
-      tracker.drawDebugMesh(rawHand); 
-
-      // 2. Draw PiP Overlay (Tracking Center & Arrow)
-      drawPiPOverlay(debugCtx, handState, trackingCenter, debugCanvas.width, debugCanvas.height);
-    }
-  }  
+    // Draw overlay
+    tracker.drawDebugMesh(rawHand); 
+    drawPiPOverlay(debugCtx, handState, trackingCenter, debugCanvas.width, debugCanvas.height);
+  }
   // Use requestVideoFrameCallback if available, otherwise fallback to rAF
   if ('requestVideoFrameCallback' in video) {
     video.requestVideoFrameCallback(trackCameraLoop);
@@ -279,8 +279,8 @@ function trackCameraLoop() {
   }
 }
 
-// --- LOOP 2: Network Syncing (Fixed 20 FPS) ---
-function networkLoop() {
+// Network Sync (40Hz), now called from the main renderLoop.
+function networkTick() {
   // Calculate Joystick Vector (Difference between hand and tracking center)
   let dx = localInput.x - trackingCenter.x;
   let dy = localInput.y - trackingCenter.y;
@@ -305,9 +305,30 @@ function networkLoop() {
   network.sendPlayerInput(moveVector);
 }
 
-// --- LOOP 3: Game Rendering (60+ FPS) ---
-function renderLoop() {
+// --- LOOP 3: Game Rendering + Fixed-Timestep Network Drive (per rAF) ---
+// One rAF callback drives both the 40Hz input/prediction tick (via an
+// accumulator) and a render every frame. Keeping input sampling on the
+// same rAF as rendering lets the browser batch the work for the next
+// vsync instead of letting a separate setInterval (or the interpolation
+// allocators in getLatestWorldState) steal mid-frame CPU and cause the
+// browser to miss a refresh — which was the source of the 30ms jitter.
+function renderLoop(now) {
   if (!isPlaying) return; // Stop render loop if not playing
+
+  if (lastRafTime == null) lastRafTime = now;
+  const dtMs = Math.min(now - lastRafTime, 200); // clamp tab-switch gaps
+  lastRafTime = now;
+  netAccumulatorMs += dtMs;
+
+  // Fixed 40Hz input/prediction step(s). Usually 0 or 1; cap at 5 to avoid
+  // the spiral-of-death after a stall, then drop the residual.
+  let steps = 0;
+  while (netAccumulatorMs >= NET_STEP_MS && steps < 5) {
+    networkTick();
+    netAccumulatorMs -= NET_STEP_MS;
+    steps++;
+  }
+  if (steps === 5) netAccumulatorMs = 0;
 
   worldState = network.getLatestWorldState();
   if (worldState) {
