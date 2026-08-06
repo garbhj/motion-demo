@@ -301,7 +301,7 @@ export class NetworkManager {
   getLatestWorldState() {
     const A = this.snapA;
     const B = this.snapB;
-    // console.log("getLatestWorldState called");
+    console.log("getLatestWorldState called");
     let world;
     if (!B || !B.state) {
       world = {

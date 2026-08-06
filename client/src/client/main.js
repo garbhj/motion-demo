@@ -26,6 +26,26 @@ const infoBtn = document.getElementById("infoBtn");
 const infoModal = document.getElementById("infoModal");
 const closeInfoBtn = document.getElementById("closeInfoBtn");
 
+// DEBUG: Recorder
+const recordBtn = document.createElement("button");
+recordBtn.textContent = "Rec";
+recordBtn.style = "position:fixed;top:10px;right:10px;z-index:10000";
+document.body.appendChild(recordBtn);
+recordBtn.onclick = () => {
+  const stream = gameCanvas.captureStream(60);
+  const rec = new MediaRecorder(stream, { mimeType: "video/webm" });
+  const chunks = [];
+  rec.ondataavailable = e => chunks.push(e.data);
+  rec.onstop = () => {
+    const blob = new Blob(chunks, { type: "video/webm" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "canvas.webm"; a.click();
+  };
+  rec.start();
+  setTimeout(() => rec.stop(), 5000);
+};
+
 if (infoBtn && infoModal && closeInfoBtn) {
   infoBtn.addEventListener("click", () => infoModal.classList.remove("hidden"));
   closeInfoBtn.addEventListener("click", () => infoModal.classList.add("hidden"));
@@ -335,8 +355,7 @@ function renderLoop(now) {
   if (worldState) {
     renderer.render(worldState, network.myId, localInput, trackingCenter);
   }
-  // Diagnostic: uncomment the next line to confirm renderLoop runs every rAF.
-  // console.log(`[rAF] dt=${dtMs.toFixed(1)} world=${!!worldState} playing=${isPlaying}`);
+  console.log(`frame=${dtMs.toFixed(1)} render=${(performance.now()-t0).toFixed(1)}`);
   requestAnimationFrame(renderLoop);
 }
 
