@@ -301,6 +301,7 @@ export class NetworkManager {
   getLatestWorldState() {
     const A = this.snapA;
     const B = this.snapB;
+    // console.log("getLatestWorldState called");
     let world;
     if (!B || !B.state) {
       world = {
@@ -314,16 +315,58 @@ export class NetworkManager {
     } else if (!A || !A.state) {
       world = this.buildWorldFromSnapshot(B.state);
     } else {
-      const target = performance.now() - this.interpDelayMs;
+      const now = performance.now();
+      const target = now - this.interpDelayMs;
       const dt = (B.t - A.t) || 1;
       let alpha = (target - A.t) / dt;
       if (alpha < 0) alpha = 0;
       if (alpha > 1) alpha = 1;
-      console.log(alpha.toFixed(2));
+      if (!this._lastLogT) this._lastLogT = now;
+      // console.log(`alpha=${alpha.toFixed(2)} dt=${dt.toFixed(1)} gap=${(now - this._lastLogT).toFixed(1)}`);
+      this._lastLogT = now;
       world = this.interpolateWorld(A.state, B.state, alpha);
+      this._logMovement(world, alpha, A.state, B.state);
     }
     this.applyPredictionOverride(world);
     return world;
+  }
+
+  // Diagnostic: log per-rAF position + per-frame delta for the local player
+  // and their orb. Also flags frames where the rendered entity didn't move
+  // at all — those are the visually "frozen" frames being investigated.
+  _logMovement(world, alpha, aState, bState) {
+    const me = world.players.find(p => String(p.id) === String(this.myId));
+    if (!me) return;
+    const orb = (world.orbs || []).find(o => String(o.ownerId) === String(this.myId));
+
+    const prev = this._prevLog || { px: me.x, py: me.y, ox: orb?.x, oy: orb?.y };
+    const pdx = me.x - prev.px;
+    const pdy = me.y - prev.py;
+    const odx = orb ? orb.x - (prev.ox ?? orb.x) : 0;
+    const ody = orb ? orb.y - (prev.oy ?? orb.y) : 0;
+    const pFrozen = Math.abs(pdx) < 0.01 && Math.abs(pdy) < 0.01;
+    const oFrozen = orb && Math.abs(odx) < 0.01 && Math.abs(ody) < 0.01;
+    const flag = (pFrozen || oFrozen) ? "  <-- FROZEN" : "";
+
+    // Raw A and B positions for the local player + orb, so we can tell
+    // whether the freeze is coming from the snapshots being identical
+    // (server sent the same state twice) or from interpolation math.
+    const aMe = (aState.players || []).find(p => String(p.id) === String(this.myId));
+    const bMe = (bState.players || []).find(p => String(p.id) === String(this.myId));
+    const aOrb = (aState.orbs || []).find(o => String(o.ownerId) === String(this.myId));
+    const bOrb = (bState.orbs || []).find(o => String(o.ownerId) === String(this.myId));
+    const aTick = aState?.tick ?? "?";
+    const bTick = bState?.tick ?? "?";
+
+    console.log(
+      `a=${alpha.toFixed(2)} tick ${aTick}->${bTick} | ` +
+      `player (${me.x.toFixed(1)},${me.y.toFixed(1)}) d=(${pdx.toFixed(1)},${pdy.toFixed(1)}) ` +
+      `A=(${aMe?.x.toFixed(1)},${aMe?.y.toFixed(1)}) B=(${bMe?.x.toFixed(1)},${bMe?.y.toFixed(1)}) | ` +
+      `orb (${orb?.x.toFixed(1)},${orb?.y.toFixed(1)}) d=(${odx.toFixed(1)},${ody.toFixed(1)}) ` +
+      `A=(${aOrb?.x.toFixed(1)},${aOrb?.y.toFixed(1)}) B=(${bOrb?.x.toFixed(1)},${bOrb?.y.toFixed(1)})` +
+      flag
+    );
+    this._prevLog = { px: me.x, py: me.y, ox: orb?.x, oy: orb?.y };
   }
 
   // Overwrites the local player's entry with the locally-predicted
@@ -338,7 +381,7 @@ export class NetworkManager {
     // a visible 3-frame stagger pattern. With this disabled, the local
     // player interpolates like everyone else, at the cost of ~interpDelayMs
     // of added input latency. Re-enable by deleting this return.
-    return;
+    // return;
     if (!this.predicted || !this.myId) return;
     const i = world.players.findIndex(p => String(p.id) === String(this.myId));
     if (i === -1) return;

@@ -331,9 +331,12 @@ function renderLoop(now) {
   if (steps === 5) netAccumulatorMs = 0;
 
   worldState = network.getLatestWorldState();
+  const t0 = performance.now();
   if (worldState) {
     renderer.render(worldState, network.myId, localInput, trackingCenter);
   }
+  // Diagnostic: uncomment the next line to confirm renderLoop runs every rAF.
+  // console.log(`[rAF] dt=${dtMs.toFixed(1)} world=${!!worldState} playing=${isPlaying}`);
   requestAnimationFrame(renderLoop);
 }
 
