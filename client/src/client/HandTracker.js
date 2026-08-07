@@ -50,7 +50,7 @@ export class HandTracker {
   startInference(stream) {
     this._session++;
     this._workerBusy = false;
-    this._track = stream.getVideoTracks()[0].clone();
+    this._track = stream.getVideoTracks()[0];
     this._processor = new MediaStreamTrackProcessor({ track: this._track });
     this._reader = this._processor.readable.getReader();
     this._running = true;

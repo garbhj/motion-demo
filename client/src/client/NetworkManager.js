@@ -301,7 +301,9 @@ export class NetworkManager {
   getLatestWorldState() {
     const A = this.snapA;
     const B = this.snapB;
-    console.log("getLatestWorldState called");
+    if (this.debug) {
+      console.log("getLatestWorldState called");
+    }
     let world;
     if (!B || !B.state) {
       world = {
@@ -322,10 +324,11 @@ export class NetworkManager {
       if (alpha < 0) alpha = 0;
       if (alpha > 1) alpha = 1;
       if (!this._lastLogT) this._lastLogT = now;
-      // console.log(`alpha=${alpha.toFixed(2)} dt=${dt.toFixed(1)} gap=${(now - this._lastLogT).toFixed(1)}`);
       this._lastLogT = now;
       world = this.interpolateWorld(A.state, B.state, alpha);
-      this._logMovement(world, alpha, A.state, B.state);
+      if (this.debug) {
+        this._logMovement(world, alpha, A.state, B.state);
+      }
     }
     this.applyPredictionOverride(world);
     return world;

@@ -26,26 +26,6 @@ const infoBtn = document.getElementById("infoBtn");
 const infoModal = document.getElementById("infoModal");
 const closeInfoBtn = document.getElementById("closeInfoBtn");
 
-// DEBUG: Recorder
-const recordBtn = document.createElement("button");
-recordBtn.textContent = "Rec";
-recordBtn.style = "position:fixed;top:10px;right:10px;z-index:10000";
-document.body.appendChild(recordBtn);
-recordBtn.onclick = () => {
-  const stream = gameCanvas.captureStream(60);
-  const rec = new MediaRecorder(stream, { mimeType: "video/webm" });
-  const chunks = [];
-  rec.ondataavailable = e => chunks.push(e.data);
-  rec.onstop = () => {
-    const blob = new Blob(chunks, { type: "video/webm" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "canvas.webm"; a.click();
-  };
-  rec.start();
-  setTimeout(() => rec.stop(), 5000);
-};
-
 if (infoBtn && infoModal && closeInfoBtn) {
   infoBtn.addEventListener("click", () => infoModal.classList.remove("hidden"));
   closeInfoBtn.addEventListener("click", () => infoModal.classList.add("hidden"));
@@ -88,7 +68,6 @@ let localInput = { x: 0.5, y: 0.5, gesture: GESTURES.OPEN };
 let trackingCenter = { x: 0.5, y: 0.5 }; // Screen center ratio (0-1)
 let worldState = null; 
 
-let lastVideoTime = -1;
 let isCameraActive = false;
 let isPlaying = false;
 let renderFrameId = null;
@@ -305,7 +284,7 @@ function networkTick() {
   let dx = localInput.x - trackingCenter.x;
   let dy = localInput.y - trackingCenter.y;
 
-  // Optional: Create a "deadzone" so slight hand jitters don't move you
+  // Create a "deadzone" so slight hand jitters don't move you
   const distance = Math.hypot(dx, dy);
   const deadzone = 0.02; // Proportion of screen
   const maxRadius = 0.25; // Max 
@@ -355,7 +334,7 @@ function renderLoop(now) {
   if (worldState) {
     renderer.render(worldState, network.myId, localInput, trackingCenter);
   }
-  console.log(`frame=${dtMs.toFixed(1)} render=${(performance.now()-t0).toFixed(1)}`);
+  // console.log(`frame=${dtMs.toFixed(1)} render=${(performance.now()-t0).toFixed(1)}`);
   requestAnimationFrame(renderLoop);
 }
 

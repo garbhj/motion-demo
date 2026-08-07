@@ -44,8 +44,7 @@ self.onmessage = async (e) => {
       landmarker = await HandLandmarker.createFromOptions(fileset, {
         baseOptions: {
           modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
-          // delegate: "GPU"
-          delegate: "CPU"
+          delegate: "GPU"  // NOTE: delegate: "CPU" if you encounter frame drops due to GPU contention
         },
         runningMode: "VIDEO",
         numHands: 1
