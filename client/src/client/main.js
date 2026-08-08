@@ -121,6 +121,9 @@ async function boot() {
     enableCameraBtn.disabled = false;
     return;
   }
+  tracker.onError = (message) => {
+    console.warn("Tracker runtime error:", message);
+  };
   enableCameraBtn.innerHTML = `<span class="btn-text">Initialize Camera</span><span class="btn-sub">Required to play</span>`;
   enableCameraBtn.disabled = false;
 
@@ -147,9 +150,17 @@ async function startCamera() {
   enableCameraBtn.disabled = true;
   enableCameraBtn.innerHTML = `<span class="btn-text">Starting...</span><span class="btn-sub">Please wait</span>`;
 
-  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  } catch (err) {
+    console.error("Camera start failed:", err);
+    enableCameraBtn.innerHTML = `<span class="btn-text">Camera Failed</span><span class="btn-sub">${err.message || "Check permissions"}</span>`;
+    enableCameraBtn.disabled = false;
+    return;
+  }
+
   video.srcObject = stream;
-  tracker.startInference(stream);
 
   video.addEventListener("loadeddata", () => {
     debugCanvas.width = video.videoWidth;
@@ -166,7 +177,9 @@ async function startCamera() {
     if (joinCodeGroup) joinCodeGroup.classList.remove("hidden");
     if (joinRoomBtn) joinRoomBtn.classList.remove("hidden");
     trackCameraLoop();
-  });
+
+    tracker.startInference(stream, video);
+  }, { once: true });
 }
 
 async function stopCamera() {

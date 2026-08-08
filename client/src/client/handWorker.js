@@ -44,7 +44,7 @@ self.onmessage = async (e) => {
       landmarker = await HandLandmarker.createFromOptions(fileset, {
         baseOptions: {
           modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
-          delegate: "GPU"  // NOTE: delegate: "CPU" if you encounter frame drops due to GPU contention
+          delegate: "CPU"  // TODO: Add GPU/CPU option for user
         },
         runningMode: "VIDEO",
         numHands: 1
@@ -56,25 +56,25 @@ self.onmessage = async (e) => {
     return;
   }
 
-  // Process a single frame of video
+  // Process a single frame. `frame` is either a VideoFrame (Chrome/Firefox
+  // MSTP path) or an ImageBitmap (Safari fallback path). Both expose a
+  // .close() and are accepted by detectForVideo.
   if (msg.type === "frame") {
     if (!landmarker) {
-      msg.frame.close();
+      msg.frame?.close?.();
       return;
     }
     try {
-      const timestampMs = Math.round(msg.frame.timestamp / 1000);
-      const results = landmarker.detectForVideo(msg.frame, timestampMs);
-      msg.frame.close();
+      const results = landmarker.detectForVideo(msg.frame, msg.ts);
+      msg.frame?.close?.();
       self.postMessage({
         type: "result",
         session: msg.session,
         landmarks: results?.landmarks || [],
-        timestamp: timestampMs
+        timestamp: msg.ts
       });
     } catch (err) {
-      msg.frame.close();
-      self.postMessage({ type: "result", session: msg.session, landmarks: [], timestamp: 0 });
+      msg.frame?.close?.();
       self.postMessage({ type: "error", message: String(err) });
     }
     return;
